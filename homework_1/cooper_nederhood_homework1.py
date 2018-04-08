@@ -199,7 +199,7 @@ def plot_dist_graph(data, k, iterations, file_name, plus_plus=False):
 	init_type = "kmeans ++" if plus_plus else "random"
 	title = "Toy data k-means distortion - {} initialization".format(init_type)
 	plt.title(title)
-	plt.savefig(file_name, format='png')
+	plt.savefig(file_name+".png", format='png')
 
 # Load data and set parameters
 toy_data = np.loadtxt('toydata.txt')
@@ -218,7 +218,7 @@ for cluster in range(k):
 	plt.scatter(toy_data[b.reshape(N),0], toy_data[b.reshape(N),1], color=colors[cluster], alpha=.3)
 plt.scatter(centroids[:,0], centroids[:,1], color='black')
 plt.title('Toy data k-means=3')
-plt.savefig('2D_kmeans', format='png')
+plt.savefig('2D_kmeans.png', format='png')
 
 # Plot distortion function over 20 iterations
 plt.clf()
