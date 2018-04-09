@@ -231,14 +231,3 @@ plot_dist_graph(toy_data, k, 20, "distortion_kmeans_plus", plus_plus=True)
 
 
 
-
-
-
-
-
-
-# test_data = np.array( [ [-1, 0], [0, 1], [1, 0], [0, -1], [3.1, 3.1], [2.9, 2.9], [3.1, 4] ])
-# test_assignments = np.array( [0, 0, 0, 0, 1, 1, 1] ).reshape((4,1))
-# test_centroids = np.array([ [0, 0] ])
-
-

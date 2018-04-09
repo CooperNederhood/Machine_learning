@@ -2,7 +2,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import multivariate_normal
 
-d = [ [4.0, 2.0, 0.60], [4.2, 2.1, 0.59], [3.9, 2.0, 0.58], [4.3, 2.1, 0.62], [4.1, 2.2, 0.63] ]
 
 def calc_normal_matrix(data, k, mean_vec, cov_mat):
 	'''
@@ -148,7 +147,7 @@ def initialize_k_mixture(data, k):
 	return mean_vec, cov_mat, pi_vec  
 
 
-def k_gaussian_mixture(data, k, conv_tolerance, c=0, mean_vec=None, cov_mat=None, pi_vec=None):
+def k_gaussian_mixture(data, k, conv_tolerance, mean_vec=None, cov_mat=None, pi_vec=None, conv_ts=None):
 	'''
 	Given data and desired k gaussian mixtures, finds MLE for parameters
 
@@ -164,24 +163,12 @@ def k_gaussian_mixture(data, k, conv_tolerance, c=0, mean_vec=None, cov_mat=None
 		- TBD
 	'''
 
-	c += 1
-
-	if c == 20:
-		return "DONE"
-
 	if mean_vec is None:
 		mean_vec, cov_mat, pi_vec = initialize_k_mixture(data, k)
+		conv_ts = []
 
 	cur_exp_ll = calc_expected_likelihood(data, k, mean_vec, cov_mat, pi_vec)
-
-	print("Expected log likelihood c={}:".format(c))
-	print(cur_exp_ll)
-
-	plt.clf()
-	plt.scatter(data[:,0], data[:,1], alpha=.3)
-	plt.scatter(mean_vec[:,0], mean_vec[:,1], color='black')
-	plt.title('Iteration #{}'.format(c))
-	plt.show()
+	conv_ts.append(cur_exp_ll)
 
 	prob_mat = calc_cluster_prob(data, k, mean_vec, cov_mat, pi_vec)
 	new_mean_vec, new_cov_mat, new_pi_vec = calc_m_step(data, k, prob_mat)
@@ -189,15 +176,50 @@ def k_gaussian_mixture(data, k, conv_tolerance, c=0, mean_vec=None, cov_mat=None
 	new_exp_ll = calc_expected_likelihood(data, k, new_mean_vec, new_cov_mat, new_pi_vec)
 
 	if np.abs(cur_exp_ll - new_exp_ll) < conv_tolerance:
-		return new_mean_vec, new_cov_mat, new_pi_vec
+		return (new_mean_vec, new_cov_mat, new_pi_vec, conv_ts)
 
 	else:
-		k_gaussian_mixture(data, k, conv_tolerance, c, new_mean_vec, new_cov_mat, new_pi_vec)
+		return k_gaussian_mixture(data, k, conv_tolerance, new_mean_vec, new_cov_mat, new_pi_vec, conv_ts)
 
+def plot_dist_graph(data, k, iterations, conv, file_name):
+	'''
+	Creates plot of exp log likelihood graph through iteration
+	'''
 
+	for _ in range(iterations):
 
-x = np.array(np.linspace(0, 5, 10, endpoint=False)).reshape((10,1))
-m = np.array([[2.5]])
-cov = np.array([[0.5]])
+		dist_series = k_gaussian_mixture(data, k, conv)[3]
+		plt.plot(dist_series, color='black', alpha=.7)
 
-test = calc_normal_matrix(x, 1, m, cov)
+	plt.xlabel("Iteration")
+	plt.ylabel("Exp log likelihood")
+	title = "Toy data k-means Gaussian mixture"
+	plt.title(title)
+	plt.savefig(file_name+".png", format='png')
+
+# 3.g - Create graph of 2D assignment and compare convergence to k-means
+
+toy_data = np.loadtxt('toydata.txt')
+N = toy_data.shape[0]
+k = 3
+conv = 0.1
+
+mean, cov, pi, ts = k_gaussian_mixture(toy_data, k, conv)
+
+# 2D assignment graph, assign to largest p_(i,j)
+prob_matrix = calc_cluster_prob(toy_data, k, mean, cov, pi)
+assignments = np.argmin(prob_matrix, axis = 1).reshape( (N,1) )
+
+plt.clf()
+colors = ['red', 'orange', 'green']
+for cluster in range(k):
+	b = assignments == cluster 
+	b.reshape(N)	
+	plt.scatter(toy_data[b.reshape(N),0], toy_data[b.reshape(N),1], color=colors[cluster], alpha=.3)
+plt.scatter(mean[:,0], mean[:,1], color='black')
+plt.title('Toy data gaussian mixture k=3')
+plt.savefig('2D_gaussian_mixture.png', format='png')
+
+# Time series of convergence thru 20 runs 
+plt.clf()
+plot_dist_graph(toy_data, k, 20, conv, "distortion_gaussian")
