@@ -41,6 +41,7 @@ def gen_bad_data(clusters, cluster_size, data_range, output_filename, x1_count, 
 	assert len(centers) == 20
 
 	scales = np.random.uniform(0.1, 1 ,size=N)
+	scales = np.full(N, 1) 
 	clusters = []
 
 	for i in range(N):
