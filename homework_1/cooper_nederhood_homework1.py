@@ -201,32 +201,50 @@ def plot_dist_graph(data, k, iterations, file_name, plus_plus=False):
 	plt.title(title)
 	plt.savefig(file_name+".png", format='png')
 
-# Load data and set parameters
-toy_data = np.loadtxt('toydata.txt')
-N = toy_data.shape[0]
-k = 3
+def return_distortion(data, k, pp=False):
+	'''
+	Given some data and k, returns a distortion
+	'''
 
-centroids, assignments, dist_series = k_means(toy_data, k)
+	if pp:
+		init_centroids = plus_plus_init(data, k)
+	else:
+		init_centroids = None 
 
-# 2.a - 2D plot of assignments and plot of distortion function
-# 2D plot of assignments
-plt.clf()
-colors = ['red', 'orange', 'green']
-for cluster in range(k):
-	b = assignments == cluster 
-	b.reshape(N)	
-	plt.scatter(toy_data[b.reshape(N),0], toy_data[b.reshape(N),1], color=colors[cluster], alpha=.3)
-plt.scatter(centroids[:,0], centroids[:,1], color='black')
-plt.title('Toy data k-means=3')
-plt.savefig('2D_kmeans.png', format='png')
+	ts = k_means(data, k, cur_centroids = init_centroids)[2]
+	return ts[-1]
 
-# Plot distortion function over 20 iterations
-plt.clf()
-plot_dist_graph(toy_data, k, 20, "distortion_kmeans")
 
-# 2.b - plot of distortion function using kmeans++ initialization
-plt.clf()
-plot_dist_graph(toy_data, k, 20, "distortion_kmeans_plus", plus_plus=True)
+
+
+if __name__ == "__main__":
+
+	# Load data and set parameters
+	toy_data = np.loadtxt('toydata.txt')
+	N = toy_data.shape[0]
+	k = 3
+
+	centroids, assignments, dist_series = k_means(toy_data, k)
+
+	# 2.a - 2D plot of assignments and plot of distortion function
+	# 2D plot of assignments
+	plt.clf()
+	colors = ['red', 'orange', 'green']
+	for cluster in range(k):
+		b = assignments == cluster 
+		b.reshape(N)	
+		plt.scatter(toy_data[b.reshape(N),0], toy_data[b.reshape(N),1], color=colors[cluster], alpha=.3)
+	plt.scatter(centroids[:,0], centroids[:,1], color='black')
+	plt.title('Toy data k-means=3')
+	plt.savefig('2D_kmeans.png', format='png')
+
+	# Plot distortion function over 20 iterations
+	plt.clf()
+	plot_dist_graph(toy_data, k, 20, "distortion_kmeans")
+
+	# 2.b - plot of distortion function using kmeans++ initialization
+	plt.clf()
+	plot_dist_graph(toy_data, k, 20, "distortion_kmeans_plus", plus_plus=True)
 
 
 
