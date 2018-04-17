@@ -1,0 +1,188 @@
+\documentclass[a4paper, 12pt]{article}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{ mathrsfs }
+\usepackage[margin=0.5in]{geometry}
+
+\begin{document}
+\title{Homework 1 - Stat 37710: Machine Learning}
+\author{Cooper Nederhood}
+\date{2018.04.05}
+\maketitle
+
+\begin{enumerate}
+\item \textbf{Question 1: Let $A$ be a symmetric $d \times d$ matrix}
+
+
+	\begin{enumerate}
+	\item ANSWER:
+	\\
+	Because $A$ is symmetric, 
+	$$\langle v, Av' \rangle = \langle Av, v' \rangle$$
+	And each is an eigenvector so,
+	$$\langle v, \lambda'v' \rangle  =  \langle \lambda v, v' \rangle  $$
+	$$ (\lambda' - \lambda) \langle v, v' \rangle   = 0 $$
+	But $ \lambda' \ne \lambda $ so $v \perp v'$
+	\\
+
+	\item ANSWER:
+	\\
+	By assumption, $S$ spans $V$ of dimension $k$ so there exist $k$ linearly independent vectors in $S$. By applying Gram-Schmidt we can construct an orthonormal basis $v^1, ... , v^k$ from this linearly independent set such that $span\{v^1, ... , v^k\} = V$. Further, each $v^i$ will be a linear combination of eigenvectors corresponding to $\lambda$. Thus, each $v^i$ is in the $\lambda$ eigenspace and thus is an eigenvector with eigenvalue $\lambda$. 
+	\\ W.L.O.G let our spanning linearly independent eigenvectors be $\{w_i, ... , w_k \}$. Then performing Gram-Schmidt we have:
+	$$ v_1 = \frac{w_1}{||w_1||} $$
+	$$ v_2 = \frac{w_2 - \langle w_2, v_1 \rangle v_1 }{||w_2 - \langle w_2, v_1 \rangle v_1 ||} $$
+	$$ v_i = \frac{w_i - \langle w_i, v_1 \rangle v_1 - ... - \langle w_i, v_{i-1} \rangle v_{i-1} }{||w_i - \langle w_i, v_1 \rangle v_1 - ... - \langle w_i, v_{i-1} \rangle v_{i-1} ||} $$	
+	\\
+
+	\item ANSWER:
+	\\
+	Taken together statements (a) and (b) imply that a $d \times d$ symmetric matrix $A$ has $d$ linearly independent eigenvectors (even if eigenvalues are repeated) and there exist eigenvectors $v_i, ... , v_d$ such that $||v_i|| = 1$. This further implies that $A$ is orthogonally diagonalizable and therefore we can write $A$ as:
+	$$ A = \left [\begin{array}{ccc} v_1 & \dots & v_d \end{array}\right]              
+	 \left[ \begin{array}{ccc} \lambda_1 & \dots & 0\\   \dots & \dots & \dots \\   0 & \dots & \lambda_d \end{array}\right]  \left [\begin{array}{ccc} v_1 & \dots & v_d \end{array}\right]^T$$
+
+	$$ A = \left [\begin{array}{ccc} \lambda_1 v_1 & \dots & \lambda_d v_d \end{array}\right] \left [\begin{array}{ccc} v_1 & \dots & v_d \end{array}\right]^T$$
+	$$ A = \sum_{i=1}^d \lambda_i v_i v_i^T$$
+	NOTE: $P = \left [\begin{array}{ccc} v_1 & \dots & v_d \end{array}\right]$ has orthonormal columns so $P^{-1} = P^T$
+
+
+	\item ANSWER:
+	\\ Below we find constrained extremum of the desired function.
+	$$ f(x) = \frac{w^TAw}{||w||^2} = \frac{w^T}{||w||}  A  \frac{w}{||w||} = u^TAu$$
+	Where $||u|| = 1$. So, do Langrange maximization of $f(u)$ such that $u^Tu = 1$
+	$$ L(u, \lambda) = u^TAu - \lambda(u^Tu - 1)$$
+	$$\frac{\partial L}{\partial u} = 2Au - 2\lambda u = 0$$	
+	$$\frac{\partial L}{\partial \lambda} = u^Tu - 1 = 0$$	
+	Together these equations show we have the following extremum:
+	$$Au = \lambda u $$ 
+	$$ ||u|| = 1$$
+	So extremum at eigenvalues with size 1. And because of the ordering of each $\lambda_i$ we can see that the maximum occurs at $v_d$ and the minimum occurs at $v_1$.
+	\end{enumerate}
+
+
+
+\item \textbf{Question 2:}
+
+	\begin{enumerate}
+	\item ANSWER:
+	\\
+	And 
+
+	\item ANSWER:
+	\\
+	But...
+	
+	\end{enumerate}
+
+\item \textbf{Question 3: Gram matrix questions}
+	 
+	\begin{enumerate}
+	\item ANSWER:
+	\\
+	Let $A = [x_1, x_2, ... , x_n]$ where $x_i \in R^d$ be the centered data matrix which therefore has dimension $d \times n$.
+	\\Further, because $n \ge d$, the matrix $A$ has max rank of $d$.
+	\\The gram matrix, $G$, can be defined as $G = A^TA$.
+	\\ We will show that $rank(A^TA) = rank(A)$ and thus $rank(G) \le d$
+	\\ To show that $rank(A^TA) = rank(A)$ we show that the dimension of each null space is equal thus implying the respective ranks are equal. Let $N(A)$ denote the null space of $A$.
+	\\ Let $x \in N(A)$. Thus:
+	$$\Rightarrow Ax = 0$$
+	$$\Rightarrow A^TAx = 0$$
+	$$\Rightarrow  x \in N(A^TA) $$
+	\\ Similarly, let $x \in N(A^TA)$. Thus:
+	$$\Rightarrow A^TAx = 0$$
+	$$\Rightarrow x^TA^TAx = 0$$
+	$$\Rightarrow (Ax)^TAx = 0$$
+	$$\Rightarrow Ax = 0$$
+	$$\Rightarrow  x \in N(A) $$
+	Putting this together, the null spaces are equal which by rank-nullity implies their ranks are equal
+
+	\item ANSWER:
+	\\
+	Let $A$ be the $d \times n$ dimensional data matrix corresponding to $x_i, ... , x_n \in R^d$. All Gram matrices are (symmetric) and positive semi-definite so we just need to construct $A$ such that rank of the gram matrix, $G$, is $r$ where $r \le d$. As shown above, the Gram matrix will have rank equal to the rank of the data matrix $A$. Thus, for some $r$ let the first $r \times r$ section of $A$ be the identity matrix. For all rows greater than $r$ the row entries for all $n$ will be zero. Thus the rank of $A$ is $r$ and therefore the rank of the Gram matrix is $r$. Therefore, the Gram matrix is the matrix $K$.
+	\end{enumerate}
+
+\item \textbf{Question 4: Centering matrix $P$ questions}
+
+	\begin{enumerate}
+	\item ANSWER: 
+	\\
+	As defined we have $P$ is symmetric and thus $P^T = P$ so $P^2 = P P$. Below I show that $PP = P$
+
+	$$PP =  \left[ \begin{array}{cccc}  1-\frac{1}{n} & -\frac{1}{n} & \dots & -\frac{1}{n} \\
+							   -\frac{1}{n} & 1-\frac{1}{n} & \dots & -\frac{1}{n} \\
+							    \vdots           & \vdots           & \ddots & \vdots \\
+							  -\frac{1}{n}  & -\frac{1}{n}  & \dots & -\frac{1}{n} \\	
+								   \end{array}\right]     
+\left[ \begin{array}{cccc}  1-\frac{1}{n} & -\frac{1}{n} & \dots & -\frac{1}{n} \\
+							   -\frac{1}{n} & 1-\frac{1}{n} & \dots & -\frac{1}{n} \\
+							    \vdots           & \vdots           & \ddots & \vdots \\
+							  -\frac{1}{n}  & -\frac{1}{n}  & \dots & -\frac{1}{n} \\	
+								   \end{array}\right]  $$
+$$PP_{i = i} = (1-\frac{1}{n})^2 + (n-1)\frac{1}{n^2} = 1 - \frac{1}{n} = P_{i=i}$$
+$$PP_{i \ne j} = 2[-\frac{1}{n} (1- \frac{1}{n})]  +  (n-2) \frac{1}{n^2} = -\frac{1}{n} = P_{i \ne j}$$
+Thus, $P^2 = P$
+
+	\item ANSWER: 
+	\\
+	First, we show going the "$\Rightarrow$" direction:
+	\\ So, assume $Pv = 0$
+	$$Pv =  \left[ \begin{array}{cccc}  1-\frac{1}{n} & -\frac{1}{n} & \dots & -\frac{1}{n} \\
+							   -\frac{1}{n} & 1-\frac{1}{n} & \dots & -\frac{1}{n} \\
+							    \vdots           & \vdots           & \ddots & \vdots \\
+							  -\frac{1}{n}  & -\frac{1}{n}  & \dots & -\frac{1}{n} \\	
+								   \end{array}\right]  
+		\left[ \begin{array}{c} v_1 \\ v_2 \\ \vdots \\ v_n \end{array}\right] = 0
+		$$
+	This results in the $n$ system of equations. NOTE: the $\langle v_i \rangle$ denotes the $i$th element is excluded from the list:
+	\begin{equation}  \tag{eq. 1}
+	(1-\frac{1}{n})v_1 - \frac{1}{n}(v_2 + ... + v_n) = 0 
+	\end{equation}
+	\begin{equation}  \tag{eq. i}
+	(1-\frac{1}{n})v_i - \frac{1}{n}(v_1 + ...\langle v_i \rangle... + v_n) = 0 
+	\end{equation}
+	Solving this system yields $v_1 = v_2 = ... = v_n$. To illustrate, we can solve for $n=2$. If $n=2$, then we have:
+
+	$$v_1 - \frac{v_1}{n} - \frac{v_2}{n} = 0 $$
+	$$- \frac{v_1}{n} + v_2 - \frac{v_2}{n} = 0 $$
+	Combining, we have $v_1 - v_2 = 0 \Rightarrow v_1 = v_2$.
+	\\So $v$ is the vector of ones times some constant (which could be zero) and we have our result.
+	\\ Next, we go the "$\Leftarrow$" direction:
+	\\ If $v = 0$ the result is obvious. If $v = [1]\lambda$ we can simply do the following:
+	$$Pv =  \left[ \begin{array}{cccc}  1-\frac{1}{n} & -\frac{1}{n} & \dots & -\frac{1}{n} \\
+							   -\frac{1}{n} & 1-\frac{1}{n} & \dots & -\frac{1}{n} \\
+							    \vdots           & \vdots           & \ddots & \vdots \\
+							  -\frac{1}{n}  & -\frac{1}{n}  & \dots & -\frac{1}{n} \\	
+								   \end{array}\right]  
+		\left[ \begin{array}{c} 1 \\ 1 \\ \vdots \\ 1 \end{array}\right] \lambda 
+		$$
+	Each $n$ row has equation of the form $1 - \frac{1}{n} - \frac{n-1}{n}$ which clearly equals zero so we have our result.
+
+
+	\end{enumerate}
+
+	\item \textbf{QUESTION 5: Local linear embedding eigenvector problem derivation } 
+	\\
+	ANSWER: Define $\Psi (y_1, ... , y_n) = \sum_i^n ||y_i - \sum_j w_{i,j} y_j ||^2 $. Without loss of generality, to simplify notation let $y_i \in R^1$
+	\\Thus, the objective function is 
+	$$\Psi (y_1, ... , y_n) = \sum_i^n (y_i - \sum_j w_{i,j} y_j )^2 $$
+	$$ = \sum_i^n [y_i^2 - y_i(\sum_j w_{i,j} y_j) - (\sum_j w_{i,j} y_j)y_i + (\sum_j w_{i,j} y_j)^2             ] $$
+	$$ = \textbf{Y}^T\textbf{Y} - \textbf{Y}^T(\textbf{WY}) - (\textbf{WY})^T\textbf{Y}  +  (\textbf{WY})^T(\textbf{WY})$$
+	$$ = ((\textbf{I} - \textbf{W})  \textbf{Y}    )^T   ((\textbf{I} - \textbf{W})  \textbf{Y}    )$$
+	$$ = \textbf{Y}^T(\textbf{I} - \textbf{W})^T    (\textbf{I} - \textbf{W})\textbf{Y}   $$
+	Let $\textbf{M} = \textbf{I} - \textbf{W} $ . Then $\Psi = \textbf{Y}^T\textbf{M}\textbf{Y}$. Note, $\textbf{M}$ is the Gram matrix.
+	\\ Because we assume $y_i \in R^1$ the var-cov $I$ constraint becomes $\textbf{Y}^T\textbf{Y} = 1$. Constructing the Lagrangian we have:
+	$$ \mathscr{L}(\textbf{Y}, \lambda) =  \textbf{Y}^T\textbf{M}\textbf{Y}  - \lambda(\textbf{Y}^T\textbf{Y} - 1)$$
+	
+	$$ \frac{\partial \mathscr{L} }{\partial \textbf{Y}} = 2 \textbf{MY} - 2\lambda \textbf{Y} = 0  $$
+	$$ \textbf{MY} = \lambda \textbf{Y}$$
+
+	Just as with PCA, $\textbf{M}$ is a symmetric matrix and thus has $n$ orthonormal eigenvectors. Thus we can maximize and minimize (in this case we want to minimize) by selecting the eigenvectors corresponding to the smallest desired eigenvalues. 
+
+\end{enumerate}
+
+\end{document}
+
+
+
+
+
+
