@@ -77,7 +77,7 @@ def do_pca(data, comp_num):
 	return coeff
 
 
-def do_LLE(data, k):
+def do_LLE(data, out_dim, k):
 	'''
 	Does local linear embedding with k nearest neighbors
 	Each ROW in data is an observation
@@ -86,33 +86,61 @@ def do_LLE(data, k):
 	# Loop over each observation in the data
 	N = data.shape[0]
 
+	w_matrix = np.zeros( (N, N) )
+
 	for i in range(N):
+
+		# Calculate the weights for that observation i
 		cur_obs = data[i,:]
 		local_data = data - cur_obs 
 		local_distances = linalg.norm(local_data, axis=1)
 		assert local_distances.shape == (N,)
 
 		ordering = np.argsort(local_distances)
-		neighborhood = local_data[ordering][1:k+1]
+		k_nn_indices = ordering[1:k+1]
+
+		neighborhood = local_data[k_nn_indices]
 		K_i = neighborhood @ neighborhood.T
 		ones = np.ones((k,1))
+
+
 		w_i = linalg.inv(K_i) @ ones
 		w_i = w_i / linalg.norm(w_i, axis=0)
 
-		print(linalg.norm(w_i))
+		print("{} NN of pt {} are:".format(k, cur_obs))
+		for j in range(k):
+			neighbor_index = k_nn_indices[j]
+			neighbor_weight = w_i[j]
+			w_matrix[i,neighbor_index] = neighbor_weight
+			print("\t pt {}".format(data[neighbor_index,:]))
+
+	n_I = np.identity(N)
+	M = (n_I - w_matrix) @ (n_I - w_matrix).T 
+
+	e_vals, e_vecs = linalg.eigh(M)
+	proj = e_vecs[:, 1:1+out_dim]
+
+	return proj
+
+
 
 if __name__ == "__main__":
 
-
+	# Load data
 	orig_data = np.loadtxt('data/3Ddata.txt')
 	orig_data[:, 3] = orig_data[:, 3] - 1
 	data_3d = orig_data[:,0:3]
 	centered_data = center_data(data_3d)
 
 	var_cov = centered_data.T @ centered_data * (1/centered_data.shape[0]) 
+	
+	# Do pca
 	pca_coeff = do_pca(data_3d, 2)
+	#graph_data3D(orig_data)
+	#graph_data2D(pca_coeff, orig_data[:,-1])
+	
+	#test_data = np.array([  [1,1], [1,1.1], [1,.9], [2,2], [2.1, 2.3] ])
+	lle_w_matrix = do_LLE(data_3d, 2, 10)
 
-	# graph_data3D(orig_data)
-	# graph_data2D(pca_coeff, orig_data[:,-1])
-	test_data = np.array([  [1,1], [1,1.1], [1,.9], [2,2], [2.1, 2.3] ])
-	do_LLE(data_3d, 10)
+	test = np.loadtxt('test_3d.txt')
+	
