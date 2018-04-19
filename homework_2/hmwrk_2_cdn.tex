@@ -60,17 +60,26 @@
 
 
 
-\item \textbf{Question 2:}
+\item \textbf{Question 2: Orthogonal projections minimize distance to a subspace}
 
 	\begin{enumerate}
 	\item ANSWER:
 	\\
-	And 
+	To find the point in $V \in R^k$  closest to $x$ we can take each dimension $1, ... ,k$ independently. So, WLOG fix some dimension $k$.  
+	\\ Let $x_{V_{k}} = (x \cdot p_k)p_k$ so  $x_{V_{k}}$ is the orthog projection of $x$ to $p_k$. Let $y$ be some point in the $p_k$ space.
+	$$ || x - x_{V_{k}} ||^2 \le || x - x_{V_{k}} ||^2  +  || x_{V_{k}} - y ||^2$$
+	$$ = || x - x_{V_{k}} + x_{V_{k}} - y ||^2 = || x - y ||^2 $$
+	Thus, to minimize $||x-y||$ we must set $y =  x_{V_{k}}$. Now, when projecting to the space of $p_1, ... , p_k$ we simply repeat this for $k$ dimensions and we have our result.
+	\\
 
 	\item ANSWER:
 	\\
-	But...
-	
+	For notations sake, we show the result for a single observation $x_i$ and then summing over all $x_i$ the result can be repeated. 
+	\\ $$ ||x_i - \sum_j \langle v_j, x_i \rangle v_j||^2 = \langle x_i - \sum_j\langle v_j, x_i \rangle v_j ,   x_i - \sum_j\langle v_j, x_i \rangle v_j \rangle$$
+	$$ = \langle x_i, x_i \rangle  - 2 \langle x, \sum_j\langle v_j, x_i \rangle v_j \rangle  + \langle  \sum_j\langle v_j, x_i \rangle v_j, \sum_j\langle v_j, x_i \rangle v_j \rangle      $$
+	$$ = \langle x_i, x_i \rangle - 2[\sum_j \langle x, v_j \rangle \langle x, v_j \rangle ]  + \sum_j \langle x, v_j \rangle \langle x, v_j \rangle  +  \sum_{i,j: i \ne j} \langle x, v_j \rangle \langle x, v_j \rangle \langle v_i, v_j \rangle$$
+	$$ = ||x||^2 - \sum_j \langle x, v_j \rangle^2  $$	
+	The first term is cleary not affected by $v_j$ and the left term, being negative, implies that our original minimization problem is equivalent to \textit{maximizing}  $\sum_j \langle x, v_j \rangle^2  $ which, per slide 12 of 02DimensionalityReduction reduces to the Rayleigh quotient problem $v^T\Sigma v$. And we know we maximize this by choosing the largest so desired Eigenvectors from the var-cov matrix $\Sigma$ NOTE: slide 12 has the proof of this final result, so rather than regurgitate it I am simply appealing to the result. 
 	\end{enumerate}
 
 \item \textbf{Question 3: Gram matrix questions}
@@ -97,7 +106,7 @@
 
 	\item ANSWER:
 	\\
-	Let $A$ be the $d \times n$ dimensional data matrix corresponding to $x_i, ... , x_n \in R^d$. All Gram matrices are (symmetric) and positive semi-definite so we just need to construct $A$ such that rank of the gram matrix, $G$, is $r$ where $r \le d$. As shown above, the Gram matrix will have rank equal to the rank of the data matrix $A$. Thus, for some $r$ let the first $r \times r$ section of $A$ be the identity matrix. For all rows greater than $r$ the row entries for all $n$ will be zero. Thus the rank of $A$ is $r$ and therefore the rank of the Gram matrix is $r$. Therefore, the Gram matrix is the matrix $K$.
+	The matrix $K \in R^{n \times n}$ is PSD which implies we can compute the Cholesky decomposition such that $K = R^TR$ where $R$ is an upper-triangle matrix. Further, $K$ is clearly the Gram matrix corresponding to $R$ and because $K$ has rank $r$, we know $R$ also has rank $r$. Let us extract the $n$ columns from $R$. We know there are $n$ columns and we know there are $r$ linearly independent columns but each column is in some unknown space $R^?$ which may have dimension less than $d$. Thus, if needed we can append zeros to each column such that each column, which we can call $x_i \in R^d$, and the resulting Gram matrix of this data is $K$.
 	\end{enumerate}
 
 \item \textbf{Question 4: Centering matrix $P$ questions}
