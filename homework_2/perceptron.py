@@ -37,7 +37,7 @@ def do_perceptron(ydata, xdata, threshold, init_weights = None, control = 0):
 		print("DONE")
 		return weights, y_hat, y_bool 
 
-def online_perceptron(ydata, xdata):
+def online_perceptron(ydata, xdata, weights=None):
 	'''
 	Performs online perceptron algorithm
 	'''
@@ -45,7 +45,8 @@ def online_perceptron(ydata, xdata):
 	N = xdata.shape[0]
 	d = xdata.shape[1]
 
-	weights = np.zeros( (d,1) )
+	if weights is None:
+		weights = np.zeros( (d,1) )
 
 	error = np.zeros( N )
 	denom = np.array(range(1,N+1))
@@ -68,9 +69,31 @@ def online_perceptron(ydata, xdata):
 			error[i] = 1
 			weights = weights + cur_y * cur_x.T 
 
+	insample_error = error.sum()/N 
 	
-	return error, denom 
+	return insample_error, weights 
 
+def gen_test_error(weights, x_test, y_test):
+
+	N = x_test.shape[0]
+	d = x_test.shape[1]
+
+	y_predictions = np.empty( (N,1) )
+
+	for i in range(N):
+		cur_x = x_test[i].reshape( (1,d) )
+
+		y_hat = cur_x @ weights 
+		y_hat = -1 if y_hat < 0 else 1
+		y_predictions[i] = y_hat 
+
+	y_bool = (y_hat != ydata).astype(int)
+	error_rate = y_bool.mean()
+
+	return 
+
+def cross_valid_perceptron(xdata, ydata, cross_part_number):
+	
 
 def batch_perceptron(ydata, xdata, weights=None, c=0, error_hist=None):
 	'''
@@ -109,7 +132,7 @@ def batch_perceptron(ydata, xdata, weights=None, c=0, error_hist=None):
 	else:
 		return batch_perceptron(ydata, xdata, weights,c=c+1, error_hist = error_hist+[error.sum()])
 	
-def test_perceptron(xdata, weights, out_file):
+def test_perceptron(xdata, weights, out_file=None):
 	'''
 	Given x-testing data and pre-trained weights,
 	generates the y-predictions and outputs to file

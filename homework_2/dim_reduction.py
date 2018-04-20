@@ -17,7 +17,7 @@ def center_data(raw_data):
 	centered_data = raw_data - col_mean
 	return centered_data
 
-def graph_data3D(data):
+def graph_data3D(data, fig_name):
 
 	fig = plt.figure()
 
@@ -33,9 +33,10 @@ def graph_data3D(data):
 
 		ax.scatter(x0, x1, x2, color=color_list[c])
 
-	plt.show()
+	plt.savefig(fig_name)
 
-def graph_data2D(data, groups):
+
+def graph_data2D(data, groups, fig_name):
 
 	color_list = ['r', 'g', 'b', 'y']
 
@@ -48,7 +49,8 @@ def graph_data2D(data, groups):
 
 	plt.xlim((data[:,0].min(), data[:,0].max()))
 	plt.ylim((data[:,1].min(), data[:,1].max()))
-	plt.show()
+	plt.savefig(fig_name)
+
 
 def do_pca(data, comp_num):
 	'''
@@ -88,6 +90,8 @@ def do_LLE(data, out_dim, k):
 
 	w_matrix = np.zeros( (N, N) )
 
+	w_dict = {}
+
 	for i in range(N):
 
 		# Calculate the weights for that observation i
@@ -97,25 +101,30 @@ def do_LLE(data, out_dim, k):
 		assert local_distances.shape == (N,)
 
 		ordering = np.argsort(local_distances)
+		assert ordering[0] == i 
 		k_nn_indices = ordering[1:k+1]
 
 		neighborhood = local_data[k_nn_indices]
+
+		# create the local Gram matrix
 		K_i = neighborhood @ neighborhood.T
 		ones = np.ones((k,1))
 
-
+		# Solve for w_i matrix and normalize
 		w_i = linalg.inv(K_i) @ ones
 		w_i = w_i / linalg.norm(w_i, axis=0)
 
-		print("{} NN of pt {} are:".format(k, cur_obs))
+		# we need to input the KNN w_i avlues into w_matrix
+		#print("{} NN of pt {} are:".format(k, cur_obs))
 		for j in range(k):
 			neighbor_index = k_nn_indices[j]
 			neighbor_weight = w_i[j]
 			w_matrix[i,neighbor_index] = neighbor_weight
-			print("\t pt {}".format(data[neighbor_index,:]))
+			#print("\t pt {}".format(data[neighbor_index,:]))
 
+	# Construct matrix M from the sparse w_matrix
 	n_I = np.identity(N)
-	M = (n_I - w_matrix) @ (n_I - w_matrix).T 
+	M = (n_I - w_matrix).T @ (n_I - w_matrix)
 
 	e_vals, e_vecs = linalg.eigh(M)
 	proj = e_vecs[:, 1:1+out_dim]
@@ -123,6 +132,54 @@ def do_LLE(data, out_dim, k):
 	return proj
 
 
+def do_iso(data, k, proj_dim):
+
+	N = data.shape[0]
+
+	# step1: calcualte the pairwise distances
+	pairwise_distances = np.empty( (N,N) )
+	for i in range(N):
+		for j in range(N):
+			x_i = data[i,:]
+			x_j = data[j,:]
+			diff = x_i - x_j
+			norm_diff = linalg.norm(diff)
+			pairwise_distances[i,j] = norm_diff
+
+	# step2: calculate the nearest neighbors for each column
+	dist_w_inf = np.full( (N,N), np.inf)
+
+	for i in range(N):
+		dist_i = pairwise_distances[:,i]
+		ordered_indices = np.argsort(dist_i)
+
+		knn_indices = ordered_indices[0:k+1]
+		dist_w_inf[knn_indices, i] = pairwise_distances[knn_indices, i]
+
+	# step3: compute shortest path
+	# Apply Floyd-Warshall algorithm
+	short_path_dist = dist_w_inf
+	for k in range(N):
+		for i in range(N):
+			for j in range(N):
+
+				if short_path_dist[i,j] > short_path_dist[i,k] + short_path_dist[k,j]:
+					short_path_dist[i,j] = short_path_dist[i,k] + short_path_dist[k,j]
+
+	# Do eigen decomp on shortest paths
+	e_vals, e_vecs = linalg.eigh(short_path_dist)
+	flipped_e_vals = np.flip(e_vals, axis=0)
+	flipped_e_vecs = np.flip(e_vecs, axis=1)
+
+	# step4: now that the eigens are sorted largest>smallest take first p, take sq.root
+	flipped_e_vals[proj_dim:] = 0
+	lambda_sqrt = np.sqrt(flipped_e_vals)
+
+	# step5: construct diagonal matrix
+	diag_lambda = np.diagflat(lambda_sqrt)
+	y_matrix = (flipped_e_vecs @ diag_lambda).T 
+
+	return pairwise_distances, dist_w_inf, short_path_dist, y_matrix 
 
 if __name__ == "__main__":
 
@@ -134,13 +191,34 @@ if __name__ == "__main__":
 
 	var_cov = centered_data.T @ centered_data * (1/centered_data.shape[0]) 
 	
-	# Do pca
+	# A: Do pca
 	pca_coeff = do_pca(data_3d, 2)
-	#graph_data3D(orig_data)
-	#graph_data2D(pca_coeff, orig_data[:,-1])
-	
-	#test_data = np.array([  [1,1], [1,1.1], [1,.9], [2,2], [2.1, 2.3] ])
-	lle_w_matrix = do_LLE(data_3d, 2, 10)
+	graph_data3D(orig_data, "3d_data.png")
+	plt.clf()
+	graph_data2D(pca_coeff, orig_data[:,-1], "pca.png")
+	plt.clf()
 
-	test = np.loadtxt('test_3d.txt')
-	
+	# B: do ISOMAP
+	pairwise_distances, dist_w_inf, short_path_dist, y_matrix  = do_iso(data_3d, 10, 2)
+	y0 = y_matrix[0,:]
+	y1 = y_matrix[1,:]
+	group = orig_data[:,-1]
+
+
+	color_list = ['r', 'g', 'b', 'y']
+
+	for c in range(4):
+		b = group == c
+
+		plt.scatter(y0[b], y1[b], color=color_list[c])
+	plt.savefig('isomap.png')
+	plt.clf()
+
+	# C: do LLE
+	lle_proj = do_LLE(data_3d, 2, 10)
+	graph_data2D(lle_proj, orig_data[:,-1], "lle.png")
+	plt.clf()
+
+
+
+
