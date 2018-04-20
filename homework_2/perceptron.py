@@ -2,6 +2,7 @@ import numpy as np
 import numpy.linalg as linalg
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+from sklearn.model_selection import KFold
 
 def do_perceptron(ydata, xdata, threshold, init_weights = None, control = 0):
 	'''
@@ -54,20 +55,16 @@ def online_perceptron(ydata, xdata, weights=None):
 	for i in range(N):
 		cur_x = xdata[i].reshape( (1,d) )
 		cur_y = ydata[i]
-		# print(cur_x.shape)
-		# print(weights.shape)
-		# print('\n')
+
 		y_hat = cur_x @ weights 
-		# print(y_hat.shape)
+
 		y_hat = -1 if y_hat < 0 else 1
 
 		cur_y = int(cur_y)
 
-		# print("y_hat={}".format(y_hat))
-		# print("cur_y={}".format(cur_y))
 		if y_hat != cur_y:
 			error[i] = 1
-			weights = weights + cur_y * cur_x.T 
+			weights = weights +cur_y * cur_x.T 
 
 	insample_error = error.sum()/N 
 	
@@ -87,13 +84,47 @@ def gen_test_error(weights, x_test, y_test):
 		y_hat = -1 if y_hat < 0 else 1
 		y_predictions[i] = y_hat 
 
-	y_bool = (y_hat != ydata).astype(int)
+	y_bool = (y_hat != y_test).astype(int)
 	error_rate = y_bool.mean()
 
-	return 
+	return error_rate
 
-def cross_valid_perceptron(xdata, ydata, cross_part_number):
-	
+def cross_valid_perceptron(xdata, ydata, k_fold_num, max_iterations):
+	'''
+	Given xdata and ydata and a desired number of k-folds k_fold_num,
+	splits the data in k_fold_num partitions. Learns the weights on the
+	training data then tests on the holdout data. REpeats for each partition
+	'''
+
+	test_errors = np.empty( (max_iterations, k_fold_num) )
+	train_errors = np.empty( (max_iterations, k_fold_num) )
+
+	kf = KFold(n_splits = k_fold_num)
+	cur_fold = 0
+	for train_index, test_index in kf.split(xdata):
+
+		# Partition the data
+		x_train, x_test = xdata[train_index], xdata[test_index]
+		y_train, y_test = ydata[train_index], ydata[test_index]
+
+		# Train model, test OutOfSample, repeat
+		w = None
+		print("K-FOLD = {}".format(cur_fold))
+		print("Avg train index = {}".format(np.mean(train_index)))
+		#print(train_index)
+		for run in range(max_iterations):
+			train_error, weights = online_perceptron(ydata, xdata, weights=w)
+			test_error = gen_test_error(weights, x_test, y_test)
+			print("\titer #{} train error = {} | test error = {}".format(run, train_error, test_error))
+
+			test_errors[run, cur_fold] = test_error 
+			train_errors[run, cur_fold] = train_error 
+			w = weights 
+
+		cur_fold += 1
+
+	return test_errors, train_errors
+
 
 def batch_perceptron(ydata, xdata, weights=None, c=0, error_hist=None):
 	'''
@@ -132,7 +163,9 @@ def batch_perceptron(ydata, xdata, weights=None, c=0, error_hist=None):
 	else:
 		return batch_perceptron(ydata, xdata, weights,c=c+1, error_hist = error_hist+[error.sum()])
 	
-def test_perceptron(xdata, weights, out_file=None):
+
+
+def output_predictions(xdata, weights, out_file=None):
 	'''
 	Given x-testing data and pre-trained weights,
 	generates the y-predictions and outputs to file
@@ -163,8 +196,36 @@ if __name__ == "__main__":
 
 	# Create x constant column
 	const = np.ones((train_x.shape[0],1))
-	const_test = np.ones((test_x.shape[0],1))
+	train_x_constant = np.concatenate( (train_x, const), axis=1)
 
+	# Run kfolds=10 cross validation. Set iterations for each kfold at 20
+	test_errors, train_errors = cross_valid_perceptron(train_x_constant, train_y, 10, 20)
+
+	# Plot the in-sample training error for each kfold iteration
+	plt.clf()
+	for j in range(10):
+		plt.plot(train_errors[:,j])
+	plt.savefig("training_error.png")
+
+	# Plot the out-of-sample testing error for each kfold iteration
+	plt.clf()
+	for j in range(10):
+		plt.plot(test_errors[:,j])
+	plt.savefig("testing_error.png")
+
+
+	x_train = train_x_constant[0:1000,:]
+	y_train = train_y[0:1000,:]
+	in_sample_error, w = online_perceptron(y_train, x_train)
+
+	x_test = train_x_constant[1000:,:]
+	y_test = train_y[1000:,:]
+
+	test_error = gen_test_error(w, x_test, y_test)
+
+
+
+'''
 	train_x_constant = np.concatenate( (train_x, const), axis=1)
 	test_x_constant = np.concatenate( (test_x, const_test), axis=1)
 
@@ -194,3 +255,4 @@ if __name__ == "__main__":
 	plt.savefig('Perceptron_training.png')
 
 	test_perceptron(test_x_constant, weights_bias, "test35.predictions")
+'''
