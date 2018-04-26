@@ -4,7 +4,7 @@ import skimage.color as skimage
 import PIL 
 
 D = 64
-TRAINING_SIZE = 2000
+TRAINING_SIZE = 200
 STRIDE = 1
 SCALE_FILTERS = 1
 
@@ -46,12 +46,12 @@ def load_training(size):
 
 def new_features(dimension, stride, primitive):
 	'''
-	Creates numpy array of dimension
-	feature_count x 8. Assumes 2 rectangle
-	features
+	Define the length=8 list of a primitive filter location.
+	Given the dimensions of the testing image and the desired stride,
+	return coordinates of all possible locations for the primitive
 
-	NOTE: filter_coords has black (+) coords first,
-			then lwhite (-) coords next
+	Returns:
+		filter_coords: array of all coord locations
 	'''
 
 	p0 = primitive[0:2]
@@ -104,73 +104,10 @@ def new_features(dimension, stride, primitive):
 		# Add points to the filter_coords list
 		filter_coords.append( p0+p1_ex+q0+q1_ex )
 
-	return filter_coords
+	return np.array(filter_coords)
 
 
-def define_features(dimension, stride, scale):
-	'''
-	Creates numpy array of dimension
-	feature_count x 8. Assumes 2 rectangle
-	features
-
-	NOTE: filter_coords has black (+) coords first,
-			then lwhite (-) coords next
-	'''
-
-	# 2 x 1 filter
-
-	# define rect boundaries for 2x1 
-	p0 = [0,0]
-	p1 = [1*scale, 1*scale]
-	q0 = [1*scale, 0]
-	q1 = [2*scale, 1*scale]
-	points = [p0, p1, q0, q1]
-
-	filter_coords = []
-	p1_ex = [i-1 for i in p1]
-	q1_ex = [i-1 for i in q1]
-
-	filter_coords.append( p0+p1_ex+q0+q1_ex )
-
-	print("p0 initialized: {}".format(p0))
-	print("p1 initialized: {}".format(p1_ex))
-	print("q0 initialized: {}".format(q0))
-	print("q1 initialized: {}".format(q1_ex))
-	print("")
-
-	while q1 != [dimension,dimension]:
-
-		# try to go right
-		if p1[1] != dimension:
-			for pt in points:
-				pt[1] += stride
-
-		# if not, then we need to reset and move down
-		else:
-			p0[1] = 0
-			p1[1] = 1*scale
-			q0[1] = 0
-			q1[1] = 1*scale
-
-			for pt in points:
-				pt[0] += stride
-
-		p1_ex = [i-1 for i in p1]
-		q1_ex = [i-1 for i in q1]
-
-		print("p0 is: {}".format(p0))
-		print("p1 is: {}".format(p1_ex))
-		print("q0 is: {}".format(q0))
-		print("q1 is: {}".format(q1_ex))
-		print("")
-
-		# Add points to the filter_coords list
-		filter_coords.append( p0+p1_ex+q0+q1_ex )
-
-	return filter_coords
-
-
-def return_II(II_table, top_left, bot_right):
+def return_II(II_table, top_left, bot_right, verbose=False):
 	'''
 	Given a summation table, and two coordinates corresponding
 	to the top-left and bottom-right corners, returns the value of
@@ -179,6 +116,12 @@ def return_II(II_table, top_left, bot_right):
 
 	x0, y0 = top_left[0], top_left[1]
 	x1, y1 = bot_right[0], bot_right[1]
+
+	if verbose:
+		print("Top left = ", top_left)
+		print("Bottom right =", bot_right)
+		print("Dimension of lookup table =", II_table.shape())
+
 
 	lookup1 = II_table[x1, y1]
 	lookup2 = 0 if y0 == 0 else II_table[x1, y0-1]
@@ -202,10 +145,17 @@ def compute_feature(pic_number, ft_number):
 
 	return pos_weight - neg_weight
 
-def find_p_theta(ft_number):
+def find_p_theta(ft_number, cur_weights):
 	'''
 	Before we can find the best weak learner, for each feature we must find
 	the optimal cutoff theta and the polarity, p.
+
+	has_image denotes positive polarity
+
+	Returns:
+		- theta: optimal cutoff for given feature
+		- polarity: optimal polarity for given feature
+		- minimum_error: minimum error of our classifier
 	'''
 
 	ft_vals = np.empty( TRAINING_SIZE*2 )
@@ -215,9 +165,10 @@ def find_p_theta(ft_number):
 
 	ranking = np.argsort(ft_vals)
 
-	sorted_weights = WEIGHTS[ranking]
+	sorted_weights = cur_weights[ranking]
 	sorted_is_image = IS_IMAGE[ranking]
 	sorted_is_background = IS_BACKGROUND[ranking]
+	sorted_ft_vals = ft_vals[ranking]
 
 	cum_image = np.cumsum(sorted_weights*sorted_is_image)
 	cum_background = np.cumsum(sorted_weights*sorted_is_background)
@@ -225,25 +176,86 @@ def find_p_theta(ft_number):
 	T_img = cum_image[-1]
 	T_back = cum_background[-1]
 
-	e = np.min(cum_image + (T_back - cum_background), cum_background + (T_img - cum_image) )
+	e = np.fmin(cum_image + (T_back - cum_background), cum_background + (T_img - cum_image) )
+
+	min_e = np.argmin(e)
+	minimum_error = e[min_e]
+
+	assert minimum_error > 0 and minimum_error <= .50
+
+	theta = (sorted_ft_vals[min_e] + sorted_ft_vals[min_e+1] ) / 2
+	polarity = 1 if cum_image[min_e] + (T_back - cum_background[min_e]) > cum_background[min_e] + (T_img - cum_image[min_e]) else -1
+
+	return theta, polarity, minimum_error
 
 
+def best_learner(cur_weights):
+	'''
+	Given the current weights, returns the i-feature #, the polarity, and theta-cutoff
+	which minimizes the error. i.e. this is our best weak classifier
+
+	Returns:
+		- i: number of the feature
+		- polarity: +1/-1 of the feature
+		- theta: cutoff value of the weak learner
+	'''
+
+	feature_count = len(FEATURE_COORDS)
+
+	opt_i = None
+	opt_polarity = None 
+	opt_theta = None
+	min_error = np.inf 
+
+	# Loop over all the features and get weak learner info
+	for ft_num in range(feature_count):
+
+		cur_theta, cur_polarity, cur_error = find_p_theta(ft_num, cur_weights)
+		print("Feature #{}:".format(ft_num))
+		print("\t theta=", cur_theta)
+		print("\t poliarity=", cur_polarity)
+		print("\t error=", cur_error)
+		print("")
+
+		if cur_error < min_error:
+			opt_i = ft_num
+			opt_polarity = cur_polarity
+			opt_theta = cur_theta
+			min_error = cur_error
+
+			print("Feature #{} is NEW BEST CLASSIFIER".format(ft_num))
+			
+	return opt_i, opt_polarity, opt_theta, min_error
+
+
+# Define a filter's starting position and determine the reuslting coordinates
+filter1 = [0,0,2,2,2,0,4,2]  # use stride 2 or 1
+filter2 = [0,0,1,1,1,0,2,1]  # use stride 1
+filter3 = [0,0,4,4,4,0,8,4]  # use stride 1
+# filter1_coords = new_features(D, stride=2, primitive=filter1)
+
+# # define the global II table for lookups
+II_TABLES = load_training(TRAINING_SIZE)
+
+# # define the global for all coordinates for our features
+FEATURE_COORDS = new_features(D, stride=1, primitive=filter3)
+
+IS_IMAGE = np.array( [1]*TRAINING_SIZE + [0]*TRAINING_SIZE)
+IS_BACKGROUND = np.array( [0]*TRAINING_SIZE + [1]*TRAINING_SIZE)
+init_weights = np.full( (2*TRAINING_SIZE), 1/(2*TRAINING_SIZE) )
+
+best_learner = best_learner(init_weights)
+
+
+
+### BELOW THIS IS TESTING CODE
+
+'''
 test_image = np.array( [ [1]*4, [2]*4, [3]*4, [4]*4 ] )
 test_II = test_image.cumsum(axis=0).cumsum(axis=1)
 
-
-
-#II_TABLES = load_training(TRAINING_SIZE)
-#FEATURE_COORDS = define_features(D, STRIDE, SCALE_FILTERS)
-WEIGHTS = np.full( (2*TRAINING_SIZE), 1/(2*TRAINING_SIZE) )
-IS_IMAGE = np.array( [1]*TRAINING_SIZE + [0]*TRAINING_SIZE)
-IS_BACKGROUND = np.array( [0]*TRAINING_SIZE + [1]*TRAINING_SIZE)
-
-# Do little test of feature computing function
 II_TABLES = np.array([test_II])
-FEATURE_COORDS = define_features(4, 2, 2)
-#check = new_features(4, 2, [0,0,2,2,2,0,4,2])
-
+FEATURE_COORDS = new_features(4, stride=1, primitive=filter1)
 ft_count = len(FEATURE_COORDS)
 
 for ft_num in range(ft_count):
@@ -252,3 +264,11 @@ for ft_num in range(ft_count):
 	val = compute_feature(0, ft_num)
 	print("\t val = ", val)
 	print()
+
+
+#II_TABLES = load_training(TRAINING_SIZE)
+#FEATURE_COORDS = define_features(D, STRIDE, SCALE_FILTERS)
+WEIGHTS = np.full( (2*TRAINING_SIZE), 1/(2*TRAINING_SIZE) )
+IS_IMAGE = np.array( [1]*TRAINING_SIZE + [0]*TRAINING_SIZE)
+IS_BACKGROUND = np.array( [0]*TRAINING_SIZE + [1]*TRAINING_SIZE)
+'''
