@@ -44,6 +44,68 @@ def load_training(size):
 
 	return ii_table 
 
+def new_features(dimension, stride, primitive):
+	'''
+	Creates numpy array of dimension
+	feature_count x 8. Assumes 2 rectangle
+	features
+
+	NOTE: filter_coords has black (+) coords first,
+			then lwhite (-) coords next
+	'''
+
+	p0 = primitive[0:2]
+	p1 = primitive[2:4]
+	q0 = primitive[4:6]
+	q1 = primitive[6:8]
+	points = [p0, p1, q0, q1]
+
+	p1_reset = p1[1]
+	q1_reset = q1[1]
+
+	filter_coords = []
+	p1_ex = [i-1 for i in p1]
+	q1_ex = [i-1 for i in q1]
+
+	filter_coords.append( p0+p1_ex+q0+q1_ex )
+
+	print("p0 initialized: {}".format(p0))
+	print("p1 initialized: {}".format(p1_ex))
+	print("q0 initialized: {}".format(q0))
+	print("q1 initialized: {}".format(q1_ex))
+	print("")
+
+	while q1 != [dimension,dimension]:
+
+		# try to go right
+		if p1[1] != dimension:
+			for pt in points:
+				pt[1] += stride
+
+		# if not, then we need to reset and move down
+		else:
+			p0[1] = 0
+			p1[1] = p1_reset
+			q0[1] = 0
+			q1[1] = q1_reset
+
+			for pt in points:
+				pt[0] += stride
+
+		p1_ex = [i-1 for i in p1]
+		q1_ex = [i-1 for i in q1]
+
+		print("p0 is: {}".format(p0))
+		print("p1 is: {}".format(p1_ex))
+		print("q0 is: {}".format(q0))
+		print("q1 is: {}".format(q1_ex))
+		print("")
+
+		# Add points to the filter_coords list
+		filter_coords.append( p0+p1_ex+q0+q1_ex )
+
+	return filter_coords
+
 
 def define_features(dimension, stride, scale):
 	'''
@@ -164,7 +226,7 @@ def find_p_theta(ft_number):
 	T_back = cum_background[-1]
 
 	e = np.min(cum_image + (T_back - cum_background), cum_background + (T_img - cum_image) )
-	
+
 
 test_image = np.array( [ [1]*4, [2]*4, [3]*4, [4]*4 ] )
 test_II = test_image.cumsum(axis=0).cumsum(axis=1)
@@ -180,6 +242,8 @@ IS_BACKGROUND = np.array( [0]*TRAINING_SIZE + [1]*TRAINING_SIZE)
 # Do little test of feature computing function
 II_TABLES = np.array([test_II])
 FEATURE_COORDS = define_features(4, 2, 2)
+#check = new_features(4, 2, [0,0,2,2,2,0,4,2])
+
 ft_count = len(FEATURE_COORDS)
 
 for ft_num in range(ft_count):
