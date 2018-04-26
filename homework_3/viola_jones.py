@@ -8,6 +8,45 @@ TRAINING_SIZE = 200
 STRIDE = 1
 SCALE_FILTERS = 1
 
+class WeakLearner:
+	"""A simple container class to store information defining a given 
+		weak learner"""
+
+	def __init__(self, i, theta, pol):
+		self.i = i 
+		self.theta = theta 
+		self.polarity = pol 
+		self.error = None
+		self.alpha = None
+		self.z = None 
+
+
+	def __str__(self):
+
+		str_1 = "Feature #{}:\n".format(self.i)
+		str_2 = "\t theta={}\n".format(self.theta)
+		str_3 = "\t poliarity={}\n".format(self.polarity)
+		str_4 = "\t error={}\n".format(self.error)
+
+		return str_1+str_2+str_3+str_4
+
+	def calc_hypoth(self):
+		'''
+		Returns an array of the predicted y-values
+		for the global dataset
+		'''
+
+		ft_vals = np.empty( TRAINING_SIZE*2 )
+
+		for pic_num in range(TRAINING_SIZE*2):
+			ft_vals[pic_num] = compute_feature(pic_num, self.i)
+
+		
+		y_hypoth = np.sign(self.polarity * (ft_vals - self.theta))
+
+		return y_hypoth
+
+
 def load_training(size):
 	'''
 	Given an integer of the size of the data in 
@@ -148,14 +187,13 @@ def compute_feature(pic_number, ft_number):
 def find_p_theta(ft_number, cur_weights):
 	'''
 	Before we can find the best weak learner, for each feature we must find
-	the optimal cutoff theta and the polarity, p.
+	the optimal cutoff theta and the polarity, p, which defines the best 
+	weak learner for this featuer
 
 	has_image denotes positive polarity
 
 	Returns:
-		- theta: optimal cutoff for given feature
-		- polarity: optimal polarity for given feature
-		- minimum_error: minimum error of our classifier
+		- weak_learner: (WeakLearner type) containing ft_number, theta, pol, error
 	'''
 
 	ft_vals = np.empty( TRAINING_SIZE*2 )
@@ -181,12 +219,19 @@ def find_p_theta(ft_number, cur_weights):
 	min_e = np.argmin(e)
 	minimum_error = e[min_e]
 
-	assert minimum_error > 0 and minimum_error <= .50
+	#assert minimum_error > 0 and minimum_error <= .50
+	assert minimum_error > 0
+
+	if minimum_error > .5:
+		print("Feature #{} has min error of {}".format(ft_number, minimum_error))
 
 	theta = (sorted_ft_vals[min_e] + sorted_ft_vals[min_e+1] ) / 2
 	polarity = 1 if cum_image[min_e] + (T_back - cum_background[min_e]) > cum_background[min_e] + (T_img - cum_image[min_e]) else -1
 
-	return theta, polarity, minimum_error
+	weak_learner = WeakLearner(ft_number, theta, polarity)
+	weak_learner.error = minimum_error
+
+	return weak_learner
 
 
 def best_learner(cur_weights):
@@ -202,31 +247,92 @@ def best_learner(cur_weights):
 
 	feature_count = len(FEATURE_COORDS)
 
-	opt_i = None
-	opt_polarity = None 
-	opt_theta = None
+	opt_learner = None
 	min_error = np.inf 
 
 	# Loop over all the features and get weak learner info
 	for ft_num in range(feature_count):
 
-		cur_theta, cur_polarity, cur_error = find_p_theta(ft_num, cur_weights)
-		print("Feature #{}:".format(ft_num))
-		print("\t theta=", cur_theta)
-		print("\t poliarity=", cur_polarity)
-		print("\t error=", cur_error)
-		print("")
+		cur_learner = find_p_theta(ft_num, cur_weights)
 
-		if cur_error < min_error:
-			opt_i = ft_num
-			opt_polarity = cur_polarity
-			opt_theta = cur_theta
-			min_error = cur_error
+		#print(cur_learner)
+		#print("")
 
-			print("Feature #{} is NEW BEST CLASSIFIER".format(ft_num))
+		if cur_learner.error < min_error:
+			opt_learner = cur_learner
+			min_error = cur_learner.error
+
+			print("Feature #{} is NEW BEST CLASSIFIER".format(cur_learner.i))
 			
-	return opt_i, opt_polarity, opt_theta, min_error
+	return opt_learner
 
+
+def update_weights(cur_weights, bl):
+	'''
+	Given the current set of weights and the new weak
+	learner to be added to the boosting hypothesis,
+	returns the re-calculated weights 
+
+	Inputs:
+		- cur_weights: current weights of the training pop
+		- bl: (WeakLearner) best weak learner in this boosting round
+
+	Returns:
+		- new_weights (np array), unweighted error of weak-learner
+	'''
+
+	y_true = IS_IMAGE - IS_BACKGROUND
+	y_hypoth = bl.calc_hypoth()
+
+	exponent = -bl.alpha * y_true * y_hypoth
+
+	new_weights = (cur_weights / bl.z) * np.exp(exponent)
+
+	error_count = (y_true == y_hypoth).astype(int)
+	print(np.unique(error_count))
+	assert error_count.min() == 0
+	assert error_count.max() == 1 
+
+	return new_weights, error_count.mean()
+
+
+
+def do_boosting(data, cur_weights, cur_hypoth=None, T=0):
+	'''
+	Given a dataset and some weights, constructs an ensemble hypothesis
+	based on a linear comb of weak-classifiers
+
+	Inputs:
+		data: (np array) of images
+		cur_weights: (np array) weights of observations
+		cur_hypoth: (list of WeakClassifiers)
+		T: (int) count of boosting rounds
+	'''
+
+	if cur_hypoth is None:
+		cur_hypoth = []
+
+	weak_learner = best_learner(cur_weights)
+	error = weak_learner.error 
+
+	alpha = (1/2) * np.log( (1-error) / error )
+	weak_learner.alpha = alpha
+
+	cur_hypoth.append(weak_learner)
+
+	z = 2 * np.sqrt( (error * (1-error) ) )
+	weak_learner.z = z
+
+	new_weights, error_rate = update_weights(cur_weights, weak_learner)
+	print(weak_learner)
+	print("QC'ed error rate=", error_rate)
+
+	# recursive call
+	if T < 5:
+		return do_boosting("stand_in", new_weights, cur_hypoth, T+1)
+
+	else:
+		return cur_hypoth
 
 # Define a filter's starting position and determine the reuslting coordinates
 filter1 = [0,0,2,2,2,0,4,2]  # use stride 2 or 1
@@ -244,7 +350,7 @@ IS_IMAGE = np.array( [1]*TRAINING_SIZE + [0]*TRAINING_SIZE)
 IS_BACKGROUND = np.array( [0]*TRAINING_SIZE + [1]*TRAINING_SIZE)
 init_weights = np.full( (2*TRAINING_SIZE), 1/(2*TRAINING_SIZE) )
 
-best_learner = best_learner(init_weights)
+hypothesis = do_boosting("stand_in", init_weights)
 
 
 
