@@ -23,7 +23,7 @@ class WeakLearner:
 
 		str_1 = "Feature #{}:\n".format(self.i)
 		str_2 = "\t theta={}\n".format(self.theta)
-		str_3 = "\t poliarity={}\n".format(self.polarity)
+		str_3 = "\t polarity={}\n".format(self.polarity)
 		str_4 = "\t error={}\n".format(self.error)
 
 		return str_1+str_2+str_3+str_4
@@ -60,12 +60,37 @@ class BoostedLearner:
 
 		self.wk_list = []
 		self.big_theta = 0
+		self.predictions = None
+		self.false_pos_rate = None
+		self.fase_neg_rate = None
 
 	def add_weak_classifier(self, wk):
 		'''
 		Adds weak classifer to boosted learner
 		'''
 		self.wk_list.append(wk)
+
+	def calc_f_vals(self, data):
+		'''
+		Helper method to calculate the f(x) values for 
+		the specified data
+		
+		Inputs:
+			- data: (np array) of II for current set of images
+
+		Returns:
+			- f_data: (np array) of f(x) values for all images in data
+		'''
+
+		image_count = data.shape[0]
+		f_data = np.zeros(image_count)
+
+		for weak_c in self.wk_list:
+			weighted_pred_y = (weak_c.alpha) * weak_c.calc_hypoth(data)
+			f_data += weighted_pred_y
+
+		return f_data 
+
 
 	def reset_big_theta(self, data, image_type_flags):
 		'''
@@ -77,10 +102,47 @@ class BoostedLearner:
 			- image_type_flags: (2 lists) indicating the image/background for
 									the current images still in data
 		'''
-		pass
+		#unpack our image/background indicators
+		is_image = image_type_flags[0]
+		is_background = image_type_flags[1]
 
+		boosting_depth = len(self.wk_list)
 
-	def calc_false_positive(self, data, image_type_flags):
+		f_data = self.calc_f_vals(data)
+
+		# we have the f(x_i) values for all images i
+		# zero out if it's a background image
+		f_data_faces = f_data * is_image
+
+		min_f = f_data_faces.min()
+
+		if min_f < 0:
+			self.big_theta = np.abs(min_f)
+		else:
+			self.big_theta = 0
+
+		return self.big_theta
+
+	def make_prediction(self, data):
+		'''
+		Makes y_hat prediction based on weak learners and the 
+		current big_theta cutoff
+
+		Returns:
+			- y_pred: predicting cat (+1 is image; -1 is background)
+		'''
+		f_data = self.calc_f_vals(data)
+		f_plus_theta = f_data + self.big_theta
+
+		y_pred = np.sign(f_plus_theta)
+
+		self.predictions = y_pred
+		self.pred_face_count = y_pred[ y_pred == 1].size
+		self.pred_back_count = y_pred[ y_pred == -1].size
+
+		return y_pred
+
+	def set_error_rates(self, data, image_type_flags):
 		'''
 		Calculates the boosted learner false positive rate
 
@@ -89,7 +151,37 @@ class BoostedLearner:
 			- image_type_flags: (2 lists) indicating the image/background for
 									the current images still in data
 		'''
-		pass
+		#unpack our image/background indicators
+		is_image = image_type_flags[0]
+		is_background = image_type_flags[1]
+
+		y_true = is_image - is_background
+		y_pred = self.make_prediction(data)
+		errors = (y_true == y_pred).astype(int)
+
+		bool_is_image = is_image == 1
+		bool_is_background = is_background == 1
+
+		false_neg = errors[y_pred == -1]
+		self.false_neg_rate = false_neg.mean()
+
+		false_pos = errors[y_pred == 1]
+		self.false_pos_rate = false_pos.mean()
+
+
+	def pretty_print(self, details=False):
+
+		print("Boosted Learner has:\n")
+		print("\t big_theta={}\n".format(self.big_theta))
+		print("\t predicted faces={}\n".format(self.pred_face_count))
+		print("\t predicted backgrounds={}\n".format(self.pred_back_count))
+		print("\t false pos rate={}\n".format(self.false_pos_rate))
+		print("\t false neg rate={}\n".format(self.false_neg_rate))
+
+		if details:
+			for weak_l in self.wk_list:
+				print(weak_l)
+
 
 
 
@@ -130,11 +222,13 @@ def load_training(size):
 		ii_table[i+size] = cum_sum
 		raw_data[i+size] = np.array(grey_im)
 
-	is_image = np.array( [1]*size + [0]*size)
-	is_background = np.array( [0]*size + [1]*size)
+	# is_image = np.array( [1]*size + [0]*size)
+	# is_background = np.array( [0]*size + [1]*size)
+	is_background = np.array( [1]*size + [0]*size)
+	is_image = np.array( [0]*size + [1]*size)
 
 	#return ii_table, raw_data
-	return ii_table, is_image, is_background
+	return ii_table, is_image, is_background, raw_data
 
 
 def new_features(dimension, stride, primitive):
@@ -407,25 +501,30 @@ def do_boosting(data, cur_weights, image_type_flags, T, cur_hypoth=None, cur_T=0
 
 	print("Round {} of {}".format(cur_T, T))
 	if cur_hypoth is None:
-		cur_hypoth = []
+		cur_hypoth = BoostedLearner()
 
 	weak_learner = best_learner(data, cur_weights, image_type_flags)
+	print(weak_learner)
 	error = weak_learner.error 
 
 	alpha = (1/2) * np.log( (1-error) / error )
 	weak_learner.alpha = alpha
 
-	cur_hypoth.append(weak_learner)
+	cur_hypoth.add_weak_classifier(weak_learner)
 
 	z = 2 * np.sqrt( (error * (1-error) ) )
 	weak_learner.z = z
 
 	new_weights, error_rate = update_weights(cur_weights, weak_learner, data, image_type_flags)
-	print(weak_learner)
-	print("QC'ed error rate=", error_rate)
 
 	# reset big_theta of our cur_hypothesis
-	# evaluate its error ==> compare to desired threshold and make recursive call or exit
+	big_theta = cur_hypoth.reset_big_theta(data, image_type_flags)
+
+	# check the error of our cur_hypothesis
+	false_pos = cur_hypoth.set_error_rates(data, image_type_flags)
+
+	cur_hypoth.pretty_print(True)
+
 
 	if cur_T < T:
 		return do_boosting(data, new_weights, image_type_flags, T, cur_hypoth, cur_T+1)
@@ -433,27 +532,6 @@ def do_boosting(data, cur_weights, image_type_flags, T, cur_hypoth=None, cur_T=0
 		return new_weights, cur_hypoth
 
 
-def find_big_theta(data, image_type_flags, meta_hypoth):
-	'''
-	Given data to evaluate the hypothesis and a list of WeakClassifiers
-	which make up the meta-hypothesis returns the big_theta adjusted cutoff
-	value which needs to be added to the meta-hypothesis to ensure that
-	no faces are classified as non-faces (i.e. no false positives)
-
-	if meta_hypoth(x) < 0 then x is non-face
-	if meta_hypoth(x) >= 0 then x is face	
-	'''
-
-	image_count = data.shape[0]
-	boosting_depth = len(meta_hypoth)
-
-	f_data = np.zeros(image_count)
-
-	for weak_c in meta_hypoth:
-		weighted_pred_y = (weak_c.alpha) * weak_c.calc_hypoth(data)
-		f_data += weighted_pred_y
-
-	# we have the f(x_i) values for all images i
 
 # Define a filter's starting position and determine the reuslting coordinates
 filter1 = [0,0,16,16,16,0,32,16]  # use stride 2 or 1
@@ -465,7 +543,7 @@ filter3 = [0,0,4,4,4,0,8,4]  # use stride 1
 features3 = new_features(D, stride=1, primitive=filter3)
 
 # Define the initial data before cascading and removing
-init_ii_tables, init_is_image, init_is_background = load_training(TRAINING_SIZE)
+init_ii_tables, init_is_image, init_is_background, raw_data = load_training(TRAINING_SIZE)
 init_weights = np.full( (2*TRAINING_SIZE), 1/(2*TRAINING_SIZE) )
 init_flags = (init_is_image, init_is_background)
 
