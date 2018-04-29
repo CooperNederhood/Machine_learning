@@ -1,10 +1,11 @@
 import numpy as np 
 import numpy.linalg as linalg
 import skimage.color as skimage
-import PIL 
+import PIL
+from PIL import Image, ImageDraw 
 
 D = 64
-TRAINING_SIZE = 100
+TRAINING_SIZE = 2
 
 class WeakLearner:
 	"""A simple container class to store information defining a given 
@@ -41,10 +42,30 @@ class WeakLearner:
 		for pic_num in range(total_pic_amount):
 			ft_vals[pic_num] = compute_feature(data, pic_num, self.i)
 
-		
-		y_hypoth = np.sign(self.polarity * (ft_vals - self.theta))
+		### Add a negative before polarity bc I think mine is backwards
+			# may want to change this at some point upstream of calcuations
+		y_hypoth = np.sign(-self.polarity * (ft_vals - self.theta))
+		y_hypoth[ y_hypoth==0 ] = 1
 
 		return y_hypoth
+
+	def calc_f_vals(self, data):
+		'''
+		Returns an array of the function-values
+		for the given data
+		'''
+
+		total_pic_amount = data.shape[0]
+
+		ft_vals = np.empty( total_pic_amount )
+
+		for pic_num in range(total_pic_amount):
+			ft_vals[pic_num] = compute_feature(data, pic_num, self.i)
+
+		f_vals = -self.polarity * (ft_vals - self.theta)
+
+		return f_vals
+
 
 class BoostedLearner:
 	""" Represents a single boosted hypothesis, stored as a list of WeakLearners.
@@ -63,6 +84,9 @@ class BoostedLearner:
 		self.predictions = None
 		self.false_pos_rate = None
 		self.fase_neg_rate = None
+
+		self.pred_face_avg = None
+		self.pred_back_avg = None
 
 	def add_weak_classifier(self, wk):
 		'''
@@ -86,7 +110,8 @@ class BoostedLearner:
 		f_data = np.zeros(image_count)
 
 		for weak_c in self.wk_list:
-			weighted_pred_y = (weak_c.alpha) * weak_c.calc_hypoth(data)
+			#weighted_pred_y = (weak_c.alpha) * weak_c.calc_hypoth(data)
+			weighted_pred_y = (weak_c.alpha) * weak_c.calc_f_vals(data)
 			f_data += weighted_pred_y
 
 		return f_data 
@@ -132,13 +157,18 @@ class BoostedLearner:
 			- y_pred: predicting cat (+1 is image; -1 is background)
 		'''
 		f_data = self.calc_f_vals(data)
+		#f_plus_theta = f_data
 		f_plus_theta = f_data + self.big_theta
 
 		y_pred = np.sign(f_plus_theta)
+		y_pred[ y_pred==0 ] = 1
 
 		self.predictions = y_pred
 		self.pred_face_count = y_pred[ y_pred == 1].size
 		self.pred_back_count = y_pred[ y_pred == -1].size
+
+		self.pred_face_avg = f_data[ y_pred == 1].mean()
+		self.pred_back_avg = f_data[ y_pred == -1].mean()
 
 		return y_pred
 
@@ -156,8 +186,9 @@ class BoostedLearner:
 		is_background = image_type_flags[1]
 
 		y_true = is_image - is_background
+
 		y_pred = self.make_prediction(data)
-		errors = (y_true == y_pred).astype(int)
+		errors = (y_true != y_pred).astype(int)
 
 		bool_is_image = is_image == 1
 		bool_is_background = is_background == 1
@@ -174,7 +205,11 @@ class BoostedLearner:
 		print("Boosted Learner has:\n")
 		print("\t big_theta={}\n".format(self.big_theta))
 		print("\t predicted faces={}\n".format(self.pred_face_count))
+		print("\t predicted avg fn value={}\n".format(self.pred_face_avg))
+
 		print("\t predicted backgrounds={}\n".format(self.pred_back_count))
+		print("\t predicted avg fn value={}\n".format(self.pred_back_avg))
+
 		print("\t false pos rate={}\n".format(self.false_pos_rate))
 		print("\t false neg rate={}\n".format(self.false_neg_rate))
 
@@ -183,17 +218,133 @@ class BoostedLearner:
 				print(weak_l)
 
 
+class CascadeClassifier():
+	"""
+	Reprsents a Viola-Jones style cascade classifer, 
+	composed of a sequence of BoostedLearners
+	"""
+
+	def __init__(self, orig_data, orig_flags, structure):
+		'''
+		Attributes:
+			- orig_data: (np array) of II tables to train on
+			- orig_flags: (np array) of face/no face flags
+			- structure: (list) of the max boosting rounds for each cascade 
+		'''
+		
+		self.orig_data = orig_data 
+		self.orig_flags = orig_flags
+		#self.max_boosting_depth = max_boosting_depth
+		self.structure = structure
+		
+		self.cascade_depth = len(structure)
+		self.booster_list = []
+		self.current_data = orig_data
+		self.current_flags = orig_flags 
+
+	def add_booster(self, data, image_type_flags, max_depth):
+		'''
+		Adds a booster classifer to the booster_list and 
+		returns the array of photo observations from data which
+		should be removed because they are predicted to be non-faces
+
+		Inputs:
+			data: (np array) of II for the current training set
+			image_type_flags: (2 lists) indicating the image/background for
+									the current images still in data
+			max_depth: (int) of max amount of weak classifiers to include
+
+		Returns:
+			restricted_data, restricted_image_flags - removes non-face photos
+		'''
+
+		picture_count = data.shape[0]
+
+		init_weights = np.full( (picture_count), 1/(picture_count) )
+		booster = do_boosting(data, init_weights, image_type_flags, max_depth)[1]
+
+		self.booster_list.append(booster)
+
+		predictions = booster.make_prediction(data)
+		pred_photo = predictions == 1
+
+		restricted_data = data[ pred_photo ]
+
+		# unpack flags to then restrict and repack
+		init_is_image, init_is_background = image_type_flags
+
+		init_flags = (init_is_image, init_is_background)
+		restricted_is_image = init_is_image[ pred_photo ]
+		restricted_is_background = init_is_background[ pred_photo ]
+		restricted_image_flags = [restricted_is_image, restricted_is_background]
+
+		cur_count = data.shape[0]
+		restricted_count = restricted_data.shape[0]
+		print("Had {} images now remove {} image.....".format(cur_count, cur_count-restricted_count))
+		print()
+
+		return restricted_data, restricted_image_flags
+
+	def build_classifier(self):
+		'''
+		Builds a cascading classifier
+		'''
+
+		# Add layers
+		for cur_cascade, max_depth in enumerate(self.structure):
+			print("#####################################")
+			print("BEGIN CASCADE (round = {})".format( cur_cascade+1))
+			print("PICTURES REMAINING = ", self.current_data.shape[0])
+			new_data, new_flags = self.add_booster(self.current_data, self.current_flags, max_depth)
+			self.current_data = new_data
+			self.current_flags = new_flags 
 
 
-def load_training(size):
+
+	def pretty_print(self):
+
+		for booster in self.booster_list:
+			booster.pretty_print()
+
+
+	def make_prediction(self, test_data):
+		'''
+		Given a table of II, returns list of which
+		picture numbers in the test data contain faces
+		'''
+
+		num_test_images = test_data.shape[0]
+		picture_numbers = np.array(range(num_test_images))
+
+		for boosted_learner in self.booster_list:
+
+			preds = boosted_learner.make_prediction(test_data)
+			is_face = preds == 1
+
+			picture_numbers = picture_numbers[is_face]
+			test_data = test_data[is_face]
+
+			if len(picture_numbers) == 0:
+				break 
+
+
+		return picture_numbers
+
+
+
+
+def load_data(size, start_at=0):
 	'''
 	Given an integer of the size of the data in 
-	each category, loads training data, and returns 
+	each category, loads data, and returns 
 	II-lookup table
 
 	Converts images to grayscale
 
-	Inputs: size (int)
+	Inputs: 
+		- size (int): of how many background and faces to return
+		- start_at (int): start at photo 0, or further into data
+
 	Returns: ii_table (np array dim: size*2 x 64 x 64)
 	'''
 
@@ -256,12 +407,6 @@ def new_features(dimension, stride, primitive):
 
 	filter_coords.append( p0+p1_ex+q0+q1_ex )
 
-	# print("p0 initialized: {}".format(p0))
-	# print("p1 initialized: {}".format(p1_ex))
-	# print("q0 initialized: {}".format(q0))
-	# print("q1 initialized: {}".format(q1_ex))
-	# print("")
-
 	while q1 != [dimension,dimension]:
 
 		# try to go right
@@ -282,16 +427,77 @@ def new_features(dimension, stride, primitive):
 		p1_ex = [i-1 for i in p1]
 		q1_ex = [i-1 for i in q1]
 
-		# print("p0 is: {}".format(p0))
-		# print("p1 is: {}".format(p1_ex))
-		# print("q0 is: {}".format(q0))
-		# print("q1 is: {}".format(q1_ex))
-		# print("")
-
 		# Add points to the filter_coords list
 		filter_coords.append( p0+p1_ex+q0+q1_ex )
 
 	return np.array(filter_coords)
+
+def make_test_image(file, trained_classifer):
+
+	im = Image.open(file)
+	draw = ImageDraw.Draw(im)
+
+	size = 64
+
+	total_faces = 0
+	total_backgrounds = 0
+
+	im_shape = im.size
+	print(im_shape)
+
+	num = 0
+
+	for x in range(im_shape[0]):
+		for y in range(im_shape[1]):
+			p = (x,y)
+			print(p)
+			print(im_shape)
+			print(num)
+			num += 1
+
+			if num > 100:
+				break
+
+			q = [x-size for x in p]
+
+			sub_photo = im.crop((q,p))
+			sub_photo.save("testphotos/file{}.jpg".format(num))
+			photo_array = np.array(sub_photo)
+			cum_sum = photo_array.cumsum(axis=0).cumsum(axis=1)
+
+			ii_table = np.array( [cum_sum] )
+			assert ii_table.shape == (1, 64, 64)
+
+			# classify
+			# pred = trained_classifer.make_prediction(ii_table)
+			# print("Found {} faces".format(total_faces))
+			# print("Found {} backgrounds".format(total_backgrounds))
+
+			# # pred face
+			# if len(pred) == 1:
+			# 	total_faces += 1
+			# 	draw.rectangle(q+p, outline=400)
+			# 	sub_photo.save("testface/file{}.jpg".format(num))
+
+			# else:
+			# 	total_backgrounds += 1
+			# 	sub_photo.save("testback/file{}.jpg".format(num))
+
+			# try to go right
+			if p[0] != 1600:
+				p[0] += 1
+
+			# if not, reset and move down
+			else:
+				p[0] = 0
+				p[1] += 1
+
+	print("Found {} faces".format(total_faces))
+	print("Found {} backgrounds".format(total_backgrounds))
+
+	im.show()
+
+
 
 
 def return_II(II_table, top_left, bot_right, verbose=False):
@@ -389,7 +595,11 @@ def find_p_theta(data, image_type_flags, ft_number, cur_weights, verbose=False):
 	if minimum_error > .5:
 		print("Feature #{} has min error of {}".format(ft_number, minimum_error))
 
-	theta = (sorted_ft_vals[min_e] + sorted_ft_vals[min_e+1] ) / 2
+	if min_e == pic_count -1:
+		theta = sorted_ft_vals[min_e]
+	else:
+		theta = (sorted_ft_vals[min_e] + sorted_ft_vals[min_e+1] ) / 2
+
 	polarity = 1 if cum_image[min_e] + (T_back - cum_background[min_e]) > cum_background[min_e] + (T_img - cum_image[min_e]) else -1
 
 	weak_learner = WeakLearner(ft_number, theta, polarity)
@@ -436,7 +646,7 @@ def best_learner(data, cur_weights, image_type_flags):
 			opt_learner = cur_learner
 			min_error = cur_learner.error
 
-			print("Feature #{} is NEW BEST CLASSIFIER".format(cur_learner.i))
+			#print("Feature #{} is NEW BEST CLASSIFIER".format(cur_learner.i))
 			
 	return opt_learner
 
@@ -464,7 +674,7 @@ def update_weights(cur_weights, bl, data, image_type_flags):
 	y_true = is_image - is_background
 	y_hypoth = bl.calc_hypoth(data)
 
-	exponent =  bl.alpha * y_true * y_hypoth
+	exponent =  -bl.alpha * y_true * y_hypoth
 
 	new_weights = (cur_weights ) * np.exp(exponent)
 	new_weights = new_weights / new_weights.sum()
@@ -472,7 +682,7 @@ def update_weights(cur_weights, bl, data, image_type_flags):
 		print("WEIGHTS != 1")
 		return new_weights, cur_weights
 
-	error_count = (y_true == y_hypoth).astype(int)
+	error_count = (y_true != y_hypoth).astype(int)
 
 	weighted_error_count = error_count*cur_weights
 
@@ -484,7 +694,7 @@ def update_weights(cur_weights, bl, data, image_type_flags):
 
 
 
-def do_boosting(data, cur_weights, image_type_flags, T, cur_hypoth=None, cur_T=0):
+def do_boosting(data, cur_weights, image_type_flags, T, cur_hypoth=None, cur_T=1):
 	'''
 	Given a dataset and some weights, constructs an ensemble hypothesis
 	based on a linear comb of weak-classifiers
@@ -499,7 +709,7 @@ def do_boosting(data, cur_weights, image_type_flags, T, cur_hypoth=None, cur_T=0
 		cur_T: (int) cuurent count of boosting rounds
 	'''
 
-	print("Round {} of {}".format(cur_T, T))
+	print("Boosting round {} of {}".format(cur_T, T))
 	if cur_hypoth is None:
 		cur_hypoth = BoostedLearner()
 
@@ -519,14 +729,16 @@ def do_boosting(data, cur_weights, image_type_flags, T, cur_hypoth=None, cur_T=0
 
 	# reset big_theta of our cur_hypothesis
 	big_theta = cur_hypoth.reset_big_theta(data, image_type_flags)
+	#cur_hypoth.big_theta = 0
 
 	# check the error of our cur_hypothesis
-	false_pos = cur_hypoth.set_error_rates(data, image_type_flags)
-
-	cur_hypoth.pretty_print(True)
+	cur_hypoth.set_error_rates(data, image_type_flags)
 
 
-	if cur_T < T:
+	cur_hypoth.pretty_print()
+
+
+	if cur_T < T and cur_hypoth.false_pos_rate > 0.3:
 		return do_boosting(data, new_weights, image_type_flags, T, cur_hypoth, cur_T+1)
 	else:
 		return new_weights, cur_hypoth
@@ -543,93 +755,17 @@ filter3 = [0,0,4,4,4,0,8,4]  # use stride 1
 features3 = new_features(D, stride=1, primitive=filter3)
 
 # Define the initial data before cascading and removing
-init_ii_tables, init_is_image, init_is_background, raw_data = load_training(TRAINING_SIZE)
+init_ii_tables, init_is_image, init_is_background, raw_data = load_data(TRAINING_SIZE, 0)
 init_weights = np.full( (2*TRAINING_SIZE), 1/(2*TRAINING_SIZE) )
 init_flags = (init_is_image, init_is_background)
 
 # # define the global for all coordinates for our features
 FEATURE_COORDS = np.concatenate( (features1, features3), axis=0)
 
+#vg0_structure = [1, 2, 5]
+vg0_structure = [1, 2]
+vg0 = CascadeClassifier(orig_data = init_ii_tables, orig_flags = init_flags, structure=vg0_structure)
+vg0.build_classifier()
 
-new_weights, cur_hypoth = do_boosting(init_ii_tables, init_weights, init_flags, 1)
+make_test_image("subphoto.jpg", vg0)
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-### BELOW THIS IS TESTING CODE
-
-'''
-test_image = np.array( [ [1]*4, [2]*4, [3]*4, [4]*4 ] )
-test_II = test_image.cumsum(axis=0).cumsum(axis=1)
-
-II_TABLES = np.array([test_II])
-FEATURE_COORDS = new_features(4, stride=1, primitive=filter1)
-ft_count = len(FEATURE_COORDS)
-
-for ft_num in range(ft_count):
-	f = FEATURE_COORDS[ft_num]
-	print("Coords: ", f[0:4], "to", f[4:8])
-	val = compute_feature(0, ft_num)
-	print("\t val = ", val)
-	print()
-
-
-#II_TABLES = load_training(TRAINING_SIZE)
-#FEATURE_COORDS = define_features(D, STRIDE, SCALE_FILTERS)
-WEIGHTS = np.full( (2*TRAINING_SIZE), 1/(2*TRAINING_SIZE) )
-IS_IMAGE = np.array( [1]*TRAINING_SIZE + [0]*TRAINING_SIZE)
-IS_BACKGROUND = np.array( [0]*TRAINING_SIZE + [1]*TRAINING_SIZE)
-'''
-
-def check_feature_calc(feature_coords, image_num):
-	'''
-	Simple utility function to hand-check that we are calculating 
-	the feature values correctly. Given an image_num and the coordinates
-	reflecting the feature, returns the feature value
-	'''
-	p0 = feature_coords[0:2]
-	p1_temp = feature_coords[2:4]
-	p1 = [x+1 for x in p1_temp]
-
-	q0 = feature_coords[4:6]
-	q1_temp = feature_coords[6:8]
-	q1 = [x+1 for x in q1_temp]
-
-	img = RAW_DATA[image_num]
-
-	pos = img[p0[0]:p1[0], p0[1]:p1[1]].sum()
-	neg = img[q0[0]:q1[0], q0[1]:q1[1]].sum()
-
-
-	return pos - neg 
-
-
-def qc_feature_calc():
-	## QC - of feature calculation
-	for ft_num in range(FEATURE_COORDS.shape[0]):
-		for image_num in range(RAW_DATA.shape[0]):
-			function = compute_feature(image_num, ft_num)
-			print("Ft # = ", ft_num)
-			print("Img # = ", image_num)
-
-			ft_coord = FEATURE_COORDS[ft_num]
-			by_hand = check_feature_calc(ft_coord, image_num)
-
-			diff = function - by_hand
-			print("Diff =", diff)
-			assert(np.abs(diff) < 0.0001)
-			print()
