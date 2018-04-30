@@ -5,7 +5,7 @@ import PIL
 from PIL import Image, ImageDraw 
 
 D = 64
-TRAINING_SIZE = 2
+TRAINING_SIZE = 100
 
 class WeakLearner:
 	"""A simple container class to store information defining a given 
@@ -242,7 +242,7 @@ class CascadeClassifier():
 		self.current_data = orig_data
 		self.current_flags = orig_flags 
 
-	def add_booster(self, data, image_type_flags, max_depth):
+	def add_booster(self, data, image_type_flags, max_depth, false_pos):
 		'''
 		Adds a booster classifer to the booster_list and 
 		returns the array of photo observations from data which
@@ -253,6 +253,7 @@ class CascadeClassifier():
 			image_type_flags: (2 lists) indicating the image/background for
 									the current images still in data
 			max_depth: (int) of max amount of weak classifiers to include
+			false_pos: (float) max false positive rate
 
 		Returns:
 			restricted_data, restricted_image_flags - removes non-face photos
@@ -261,7 +262,7 @@ class CascadeClassifier():
 		picture_count = data.shape[0]
 
 		init_weights = np.full( (picture_count), 1/(picture_count) )
-		booster = do_boosting(data, init_weights, image_type_flags, max_depth)[1]
+		booster = do_boosting(data, init_weights, image_type_flags, max_depth, fp_rate=false_pos)[1]
 
 		self.booster_list.append(booster)
 
@@ -291,11 +292,13 @@ class CascadeClassifier():
 		'''
 
 		# Add layers
-		for cur_cascade, max_depth in enumerate(self.structure):
+		for cur_cascade, s in enumerate(self.structure):
+			max_depth = s[0]
+			false_pos = s[1]
 			print("#####################################")
 			print("BEGIN CASCADE (round = {})".format( cur_cascade+1))
 			print("PICTURES REMAINING = ", self.current_data.shape[0])
-			new_data, new_flags = self.add_booster(self.current_data, self.current_flags, max_depth)
+			new_data, new_flags = self.add_booster(self.current_data, self.current_flags, max_depth, false_pos)
 			self.current_data = new_data
 			self.current_flags = new_flags 
 
@@ -432,70 +435,41 @@ def new_features(dimension, stride, primitive):
 
 	return np.array(filter_coords)
 
-def make_test_image(file, trained_classifer):
+
+
+def do_test(file, trained_classifer):
 
 	im = Image.open(file)
 	draw = ImageDraw.Draw(im)
-
 	size = 64
+	count = 0
 
-	total_faces = 0
-	total_backgrounds = 0
+	faces = []
 
-	im_shape = im.size
-	print(im_shape)
+	for x in range(64, im.size[0]+1):
+		for y in range(64, im.size[1]+1):
 
-	num = 0
-
-	for x in range(im_shape[0]):
-		for y in range(im_shape[1]):
-			p = (x,y)
-			print(p)
-			print(im_shape)
-			print(num)
-			num += 1
-
-			if num > 100:
-				break
-
-			q = [x-size for x in p]
-
-			sub_photo = im.crop((q,p))
-			sub_photo.save("testphotos/file{}.jpg".format(num))
-			photo_array = np.array(sub_photo)
+			sub = im.crop((x-64, y-64, x, y))
+			count +=1 
+			photo_array = np.array(sub)
 			cum_sum = photo_array.cumsum(axis=0).cumsum(axis=1)
-
 			ii_table = np.array( [cum_sum] )
 			assert ii_table.shape == (1, 64, 64)
 
-			# classify
-			# pred = trained_classifer.make_prediction(ii_table)
-			# print("Found {} faces".format(total_faces))
-			# print("Found {} backgrounds".format(total_backgrounds))
+			# predict
+			pred = trained_classifer.make_prediction(ii_table)
+			if len(pred) == 1:
+				faces.append(sub)
+				draw.rectangle((x-64, y-64, x, y), outline=400)
 
-			# # pred face
-			# if len(pred) == 1:
-			# 	total_faces += 1
-			# 	draw.rectangle(q+p, outline=400)
-			# 	sub_photo.save("testface/file{}.jpg".format(num))
+			#print("Subphoto from {}, {}, {}, {} has size = {}".format(x-64,y-64,x,y, sub.size))
+			#print("\tPrediction is:", pred)
 
-			# else:
-			# 	total_backgrounds += 1
-			# 	sub_photo.save("testback/file{}.jpg".format(num))
+		if np.mod(x,10) == 0:
+			print("Testing subphoto at {}, {}, {}, {}".format(x-64,y-64,x,y))
 
-			# try to go right
-			if p[0] != 1600:
-				p[0] += 1
-
-			# if not, reset and move down
-			else:
-				p[0] = 0
-				p[1] += 1
-
-	print("Found {} faces".format(total_faces))
-	print("Found {} backgrounds".format(total_backgrounds))
-
-	im.show()
+			
+	return count, faces, im
 
 
 
@@ -694,7 +668,7 @@ def update_weights(cur_weights, bl, data, image_type_flags):
 
 
 
-def do_boosting(data, cur_weights, image_type_flags, T, cur_hypoth=None, cur_T=1):
+def do_boosting(data, cur_weights, image_type_flags, T, fp_rate, cur_hypoth=None, cur_T=1):
 	'''
 	Given a dataset and some weights, constructs an ensemble hypothesis
 	based on a linear comb of weak-classifiers
@@ -705,6 +679,7 @@ def do_boosting(data, cur_weights, image_type_flags, T, cur_hypoth=None, cur_T=1
 		image_type_flags: (2 lists) indicating the image/background for
 								the current images still in data
 		T: (int) rounds of boosting
+		fp_rate: (float) false positive cutoff
 		cur_hypoth: (list of WeakClassifiers)
 		cur_T: (int) cuurent count of boosting rounds
 	'''
@@ -738,21 +713,27 @@ def do_boosting(data, cur_weights, image_type_flags, T, cur_hypoth=None, cur_T=1
 	cur_hypoth.pretty_print()
 
 
-	if cur_T < T and cur_hypoth.false_pos_rate > 0.3:
-		return do_boosting(data, new_weights, image_type_flags, T, cur_hypoth, cur_T+1)
+	if cur_T < T and cur_hypoth.false_pos_rate > fp_rate:
+		return do_boosting(data, new_weights, image_type_flags, T, fp_rate, cur_hypoth, cur_T+1)
 	else:
 		return new_weights, cur_hypoth
 
 
 
 # Define a filter's starting position and determine the reuslting coordinates
-filter1 = [0,0,16,16,16,0,32,16]  # use stride 2 or 1
-features1 = new_features(D, stride=1, primitive=filter1)
+filter1 = [0,0,8,8,8,0,16,8]  # use stride 2 or 1
+features1 = new_features(D, stride=2, primitive=filter1)
 
-filter2 = [0,0,1,1,1,0,2,1]  # use stride 1
+# filter2 = [0,0,1,1,1,0,2,1]  # use stride 1
 
-filter3 = [0,0,4,4,4,0,8,4]  # use stride 1
-features3 = new_features(D, stride=1, primitive=filter3)
+# filter3 = [0,0,4,4,4,0,8,4]  # use stride 1
+# features3 = new_features(D, stride=1, primitive=filter3)
+
+# filter4 = [0,0,2,8,2,0,4,8]
+# features4 = new_features(D, stride=2, primitive=filter4)
+
+filter2 = [0,0,8,8,0,8,8,16]  # use stride 2 or 1
+features2 = new_features(D, stride=2, primitive=filter2)
 
 # Define the initial data before cascading and removing
 init_ii_tables, init_is_image, init_is_background, raw_data = load_data(TRAINING_SIZE, 0)
@@ -760,12 +741,15 @@ init_weights = np.full( (2*TRAINING_SIZE), 1/(2*TRAINING_SIZE) )
 init_flags = (init_is_image, init_is_background)
 
 # # define the global for all coordinates for our features
-FEATURE_COORDS = np.concatenate( (features1, features3), axis=0)
+#FEATURE_COORDS = np.concatenate( (features1, features3, features4), axis=0)
+FEATURE_COORDS = np.concatenate( (features1, features2), axis=0)
 
 #vg0_structure = [1, 2, 5]
-vg0_structure = [1, 2]
+vg0_structure = [(1, .3) , (5, .2), (5, .1), (10, 0.075)]
 vg0 = CascadeClassifier(orig_data = init_ii_tables, orig_flags = init_flags, structure=vg0_structure)
 vg0.build_classifier()
 
-make_test_image("subphoto.jpg", vg0)
-
+'''
+iters, results, im = do_test("small_test.jpg", vg0)
+im.show()
+'''
