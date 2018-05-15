@@ -3,9 +3,10 @@ import numpy.linalg as linalg
 import skimage.color as skimage
 import PIL
 from PIL import Image, ImageDraw 
+import timeit
 
 D = 64
-TRAINING_SIZE = 100
+TRAINING_SIZE = 1000
 
 class WeakLearner:
 	"""A simple container class to store information defining a given 
@@ -87,6 +88,8 @@ class BoostedLearner:
 
 		self.pred_face_avg = None
 		self.pred_back_avg = None
+		self.created_time = timeit.default_timer()
+		self.finished_time = None
 
 	def add_weak_classifier(self, wk):
 		'''
@@ -110,8 +113,8 @@ class BoostedLearner:
 		f_data = np.zeros(image_count)
 
 		for weak_c in self.wk_list:
-			#weighted_pred_y = (weak_c.alpha) * weak_c.calc_hypoth(data)
-			weighted_pred_y = (weak_c.alpha) * weak_c.calc_f_vals(data)
+			weighted_pred_y = (weak_c.alpha) * weak_c.calc_hypoth(data)
+			#weighted_pred_y = (weak_c.alpha) * weak_c.calc_f_vals(data)
 			f_data += weighted_pred_y
 
 		return f_data 
@@ -263,6 +266,7 @@ class CascadeClassifier():
 
 		init_weights = np.full( (picture_count), 1/(picture_count) )
 		booster = do_boosting(data, init_weights, image_type_flags, max_depth, fp_rate=false_pos)[1]
+		booster.finished_time = timeit.default_timer()
 
 		self.booster_list.append(booster)
 
@@ -282,6 +286,7 @@ class CascadeClassifier():
 		cur_count = data.shape[0]
 		restricted_count = restricted_data.shape[0]
 		print("Had {} images now remove {} image.....".format(cur_count, cur_count-restricted_count))
+		print("Time elapsed was {}".format(booster.finished_time - booster.created_time))
 		print()
 
 		return restricted_data, restricted_image_flags
@@ -413,7 +418,8 @@ def new_features(dimension, stride, primitive):
 	while q1 != [dimension,dimension]:
 
 		# try to go right
-		if p1[1] != dimension:
+		#if p1[1] != dimension:
+		if q1[1] != dimension:
 			for pt in points:
 				pt[1] += stride
 
@@ -724,16 +730,42 @@ def do_boosting(data, cur_weights, image_type_flags, T, fp_rate, cur_hypoth=None
 filter1 = [0,0,8,8,8,0,16,8]  # use stride 2 or 1
 features1 = new_features(D, stride=2, primitive=filter1)
 
-# filter2 = [0,0,1,1,1,0,2,1]  # use stride 1
+#filter1a = [0,0,4,4,4,0,8,4]  # use stride 2 or 1
+#features1a = new_features(D, stride=2, primitive=filter1a)
+filter1a = [0,0,2,10,2,0,4,10]  # use stride 2 or 1
+features1a = new_features(D, stride=1, primitive=filter1a)
 
-# filter3 = [0,0,4,4,4,0,8,4]  # use stride 1
-# features3 = new_features(D, stride=1, primitive=filter3)
+filter1b = [0,0,2,2,2,0,4,2]  # use stride 2 or 1
+features1b = new_features(D, stride=2, primitive=filter1b)
 
-# filter4 = [0,0,2,8,2,0,4,8]
-# features4 = new_features(D, stride=2, primitive=filter4)
+filter1c = [0,0,16,16,16,0,32,16]  # use stride 2 or 1
+features1c = new_features(D, stride=2, primitive=filter1c)
+
+filter1d = [0,0,32,32,32,0,64,32]  # use stride 2 or 1
+features1d = new_features(D, stride=1, primitive=filter1d)
+
+#filter1e = [0,0,1,1,1,0,2,1]  # use stride 2 or 1
+#features1e = new_features(D, stride=1, primitive=filter1e)
 
 filter2 = [0,0,8,8,0,8,8,16]  # use stride 2 or 1
 features2 = new_features(D, stride=2, primitive=filter2)
+
+#filter2a = [0,0,4,4,0,4,4,8]  # use stride 2 or 1
+#features2a = new_features(D, stride=2, primitive=filter2a)
+filter2a = [0,0,10,2,0,2,10,4]  # use stride 2 or 1
+features2a = new_features(D, stride=1, primitive=filter2a)
+
+filter2b = [0,0,2,2,0,2,2,4]  # use stride 2 or 1
+features2b = new_features(D, stride=2, primitive=filter2b)
+
+filter2c = [0,0,16,16,0,16,16,32]  # use stride 2 or 1
+features2c = new_features(D, stride=2, primitive=filter2c)
+
+filter2d = [0,0,32,32,0,32,32,64]  # use stride 2 or 1
+features2d = new_features(D, stride=2, primitive=filter2d)
+
+#filter2e = [0,0,1,1,0,1,1,2]  # use stride 2 or 1
+#features2e = new_features(D, stride=2, primitive=filter2e)
 
 # Define the initial data before cascading and removing
 init_ii_tables, init_is_image, init_is_background, raw_data = load_data(TRAINING_SIZE, 0)
@@ -742,14 +774,13 @@ init_flags = (init_is_image, init_is_background)
 
 # # define the global for all coordinates for our features
 #FEATURE_COORDS = np.concatenate( (features1, features3, features4), axis=0)
-FEATURE_COORDS = np.concatenate( (features1, features2), axis=0)
+FEATURE_COORDS = np.concatenate( (features1, features2, features1a, features2a,
+	features1b, features2b, features1c, features2c, features1d, features2d), axis=0)
 
-#vg0_structure = [1, 2, 5]
-vg0_structure = [(1, .3) , (5, .2), (5, .1), (10, 0.075)]
+vg0_structure = [(1, .45), (3, .4), (5, .35), (7, .30), (9, .25), (12, .1)]
+vg0_structure = [(10, .3), (10, .2), (10, .1), (10, .05), (20, .01)]
 vg0 = CascadeClassifier(orig_data = init_ii_tables, orig_flags = init_flags, structure=vg0_structure)
 vg0.build_classifier()
 
-'''
-iters, results, im = do_test("small_test.jpg", vg0)
-im.show()
-'''
+# iters, results, im = do_test("small_test.jpg", vg0)
+# im.save('full_class.png')

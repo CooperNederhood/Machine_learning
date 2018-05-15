@@ -223,7 +223,7 @@ if __name__ == "__main__":
 
 	test_error = gen_test_error(w, x_test, y_test)
 
-
+	# Below is some code I was using to debug and geneate the prediction .txt file
 
 '''
 	train_x_constant = np.concatenate( (train_x, const), axis=1)
